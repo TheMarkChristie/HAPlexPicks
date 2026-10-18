@@ -1,0 +1,18 @@
+# The Watch dashboard: one panel view, the Plex Picks card alone, full width. Deployed to Norway by
+# tools/deploy_watch_dashboard.py (url_path plex-watch, sidebar title Watch).
+title: Watch
+views:
+  - title: Watch
+    path: watch
+    icon: mdi:movie-open-play
+    type: panel
+    cards:
+      - type: custom:plex-picks-card
+        rows:
+          - continue
+          - because
+          - picked
+          - again
+          - recent
+        players:
+          - media_player.77_oled_tq77s85daexxc

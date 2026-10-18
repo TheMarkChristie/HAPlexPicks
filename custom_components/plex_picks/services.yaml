@@ -1,0 +1,26 @@
+refresh:
+
+play:
+  fields:
+    rating_key:
+      required: true
+      example: "1734361"
+      selector:
+        text:
+    player:
+      required: true
+      selector:
+        entity:
+          domain: media_player
+    media_type:
+      default: movie
+      selector:
+        select:
+          options:
+            - movie
+            - show
+            - episode
+    resume:
+      default: false
+      selector:
+        boolean:

@@ -1,0 +1,8 @@
+# The same card, compact, for a Sections view on the Home dashboard: one row, smaller posters, tap opens the sheet.
+type: custom:plex-picks-card
+compact: true
+rows:
+  - because
+max_items: 12
+players:
+  - media_player.77_oled_tq77s85daexxc

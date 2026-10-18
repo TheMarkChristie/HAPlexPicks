@@ -1,0 +1,24 @@
+{
+  "domain": "plex_picks",
+  "name": "Plex Picks",
+  "codeowners": [
+    "@TheMarkChristie"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "http",
+    "frontend",
+    "lovelace",
+    "websocket_api"
+  ],
+  "after_dependencies": [
+    "media_player",
+    "plex"
+  ],
+  "documentation": "https://github.com/TheMarkChristie/HAPlexPicks",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/TheMarkChristie/HAPlexPicks/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

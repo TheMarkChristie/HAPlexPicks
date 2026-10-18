@@ -1,0 +1,11 @@
+# secrets and personal data stay out of the public repository
+.env
+research/
+docs/
+tools/
+
+# build and test leftovers
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/out/*.html

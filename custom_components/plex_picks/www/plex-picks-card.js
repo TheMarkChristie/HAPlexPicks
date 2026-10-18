@@ -1,0 +1,360 @@
+/*
+ * Plex Picks card: Shortlist's recommendation rows from Plex, Netflix-style, with a Play button for the TVs.
+ *
+ *   type: custom:plex-picks-card
+ *   rows: [continue, because, picked, again, recent]   # which rows (kinds or row ids); default: every row
+ *   slug: themarkchristie                              # whose Shortlist rows; default: everyone's
+ *   libraries: [Movies, TV Shows]                      # only rows for these libraries; default: all
+ *   compact: false                                     # true: one row, smaller posters, for a Home dashboard section
+ *   max_items: 40                                      # per row
+ *   players: [media_player.tv]                         # override the integration's Play targets
+ *   title: ""                                          # a heading above the rows; none by default
+ *
+ * The integration serves this file and registers it as a dashboard resource; nothing to install.
+ * Copyright (c) 2026 Mark Christie. MIT licence.
+ */
+(function () {
+  const STR = {
+    en: {
+      continue: "Continue watching", recent: "New on the server", notSetUp: "Plex Picks is not set up yet. Add the integration under Settings > Devices & services.",
+      noRows: "No rows yet. Shortlist builds them on its first run; this card fills in once they exist.",
+      noMatch: "No rows match this card's filters.", loading: "Loading your picks", watched: (p) => `${p}% watched`,
+      playOn: "Play on", openPlex: "Open in Plex", close: "Close", because: "Because you watched", resume: "Resume",
+      sending: (tv) => `Sending to ${tv}…`, sent: (tv) => `Playing on ${tv}`, failed: "Could not play", min: "min", h: "h",
+      cast: "Cast", director: "Director", directors: "Directors", episodes: (n, t) => `${n} of ${t} episodes watched`,
+      noPlayers: "No TVs configured. Add players in the integration's options.", lib: "Library",
+    },
+    nb: {
+      continue: "Fortsett å se", recent: "Nytt på serveren", notSetUp: "Plex Picks er ikke satt opp ennå. Legg til integrasjonen under Innstillinger > Enheter og tjenester.",
+      noRows: "Ingen rader ennå. Shortlist lager dem ved første kjøring; kortet fylles når de finnes.",
+      noMatch: "Ingen rader passer kortets filtre.", loading: "Henter forslag", watched: (p) => `${p} % sett`,
+      playOn: "Spill på", openPlex: "Åpne i Plex", close: "Lukk", because: "Fordi du så", resume: "Fortsett",
+      sending: (tv) => `Sender til ${tv}…`, sent: (tv) => `Spiller på ${tv}`, failed: "Kunne ikke spille", min: "min", h: "t",
+      cast: "Skuespillere", director: "Regi", directors: "Regi", episodes: (n, t) => `${n} av ${t} episoder sett`,
+      noPlayers: "Ingen TV-er er satt opp. Legg til spillere i integrasjonens valg.", lib: "Bibliotek",
+    },
+  };
+
+  const CSS = `
+    :host { display: block; --pp-poster-w: 150px; --pp-gap: 12px; --pp-radius: 10px; }
+    :host([compact]) { --pp-poster-w: 112px; --pp-gap: 10px; }
+    @media (max-width: 600px) { :host { --pp-poster-w: 118px; } :host([compact]) { --pp-poster-w: 98px; } }
+    ha-card { display: block; padding: 6px 0 10px; overflow: hidden; }
+    .title { font-size: 1.3em; font-weight: 500; margin: 10px 16px 2px; color: var(--primary-text-color); }
+    .msg { padding: 18px 16px; color: var(--secondary-text-color); line-height: 1.45; }
+    .row { margin: 6px 0 2px; }
+    .rowhead { display: flex; align-items: baseline; gap: 10px; padding: 8px 16px 6px; }
+    .rowhead h3 { margin: 0; font-size: 1.05em; font-weight: 600; color: var(--primary-text-color); letter-spacing: 0.01em; }
+    .pill { font-size: 0.72em; padding: 2px 8px; border-radius: 999px; background: var(--secondary-background-color, rgba(127,127,127,0.18)); color: var(--secondary-text-color); white-space: nowrap; }
+    .count { margin-left: auto; font-size: 0.78em; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+    .scroller { display: flex; gap: var(--pp-gap); overflow-x: auto; overflow-y: hidden; padding: 4px 16px 12px; scroll-snap-type: x proximity; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+    .scroller::-webkit-scrollbar { height: 6px; } .scroller::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.35); border-radius: 3px; }
+    .tile { flex: 0 0 var(--pp-poster-w); width: var(--pp-poster-w); scroll-snap-align: start; background: none; border: 0; padding: 0; margin: 0; text-align: left; cursor: pointer; color: inherit; font: inherit; border-radius: var(--pp-radius); }
+    .tile:focus-visible { outline: 3px solid var(--primary-color); outline-offset: 3px; }
+    .poster { position: relative; width: 100%; aspect-ratio: 2 / 3; border-radius: var(--pp-radius); overflow: hidden; background: var(--secondary-background-color, #2a2a2a); box-shadow: 0 2px 10px rgba(0,0,0,0.25); transition: transform 160ms ease, box-shadow 160ms ease; }
+    .tile:hover .poster, .tile:focus-visible .poster { transform: translateY(-3px) scale(1.03); box-shadow: 0 8px 22px rgba(0,0,0,0.35); }
+    .poster img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .poster .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 10px; text-align: center; font-weight: 600; color: var(--primary-text-color); background: linear-gradient(160deg, rgba(229,160,13,0.55), rgba(60,60,60,0.6)); }
+    .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0,0,0,0.5); }
+    .bar > i { display: block; height: 100%; background: var(--primary-color, #e5a00d); }
+    .badge { position: absolute; top: 6px; left: 6px; font-size: 0.68em; padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,0.65); color: #fff; letter-spacing: 0.04em; }
+    .cap { padding: 6px 2px 0; }
+    .cap .t { font-size: 0.86em; line-height: 1.25; color: var(--primary-text-color); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .cap .m { font-size: 0.75em; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    :host([compact]) .cap .m { display: none; }
+    @media (prefers-reduced-motion: reduce) { .poster, .tile:hover .poster { transition: none; transform: none; } }
+
+    .overlay { position: fixed; inset: 0; z-index: 9; background: rgba(0,0,0,0.6); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .sheet { position: relative; width: min(820px, 100%); max-height: min(92vh, 900px); overflow: auto; border-radius: 16px; background: var(--card-background-color, #1e1e1e); color: var(--primary-text-color); box-shadow: 0 20px 60px rgba(0,0,0,0.5); outline: none; }
+    .hero { position: relative; aspect-ratio: 16 / 9; max-height: 46vh; background-size: cover; background-position: center top; }
+    .hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.05) 30%, var(--card-background-color, #1e1e1e) 100%); }
+    .hero .close { position: absolute; top: 10px; right: 10px; z-index: 1; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(0,0,0,0.55); color: #fff; font-size: 22px; line-height: 40px; text-align: center; cursor: pointer; }
+    .hero .close:focus-visible { outline: 3px solid #fff; }
+    .body { position: relative; padding: 0 22px 22px; margin-top: -56px; }
+    .body h2 { margin: 0 0 4px; font-size: 1.7em; line-height: 1.15; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+    .body .sub { color: var(--secondary-text-color); margin-bottom: 8px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 0.9em; color: var(--secondary-text-color); margin: 6px 0 10px; }
+    .meta b { color: var(--primary-text-color); font-weight: 600; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 12px; }
+    .chip { font-size: 0.78em; padding: 3px 9px; border-radius: 999px; background: var(--secondary-background-color, rgba(127,127,127,0.2)); color: var(--primary-text-color); }
+    .reason { font-size: 0.9em; color: var(--secondary-text-color); margin: 0 0 10px; }
+    .reason b { color: var(--primary-text-color); }
+    .summary { line-height: 1.5; margin: 0 0 14px; }
+    .people { font-size: 0.9em; color: var(--secondary-text-color); margin: 0 0 14px; line-height: 1.5; }
+    .people b { color: var(--primary-text-color); font-weight: 600; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px; border: 0; cursor: pointer; font: inherit; font-weight: 600; background: var(--primary-color, #e5a00d); color: var(--text-primary-color, #fff); }
+    .btn.secondary { background: var(--secondary-background-color, rgba(127,127,127,0.2)); color: var(--primary-text-color); text-decoration: none; }
+    .btn:focus-visible { outline: 3px solid var(--primary-text-color); outline-offset: 2px; }
+    .btn[disabled] { opacity: 0.6; cursor: default; }
+    .status { width: 100%; font-size: 0.88em; color: var(--secondary-text-color); min-height: 1.2em; }
+    .status.err { color: var(--error-color, #db4437); }
+    @media (max-width: 600px) { .overlay { padding: 0; align-items: flex-end; } .sheet { border-radius: 16px 16px 0 0; max-height: 96vh; } .body { padding: 0 16px 18px; } .body h2 { font-size: 1.35em; } }
+  `;
+
+  const DEFAULTS = { rows: null, exclude: [], slug: null, libraries: null, compact: false, max_items: 40, players: null, title: "" };
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  class PlexPicksCard extends HTMLElement {
+    static getStubConfig() { return { rows: ["continue", "because", "picked", "again", "recent"] }; }
+
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this._config = { ...DEFAULTS };
+      this._data = null;
+      this._error = null;
+      this._loading = false;
+      this._lastFocus = null;
+    }
+
+    setConfig(config) {
+      if (config && config.rows && !Array.isArray(config.rows)) throw new Error("rows must be a list");
+      this._config = { ...DEFAULTS, ...(config || {}) };
+      if (this._config.compact) this.setAttribute("compact", ""); else this.removeAttribute("compact");
+      this._render();
+    }
+
+    set hass(hass) {
+      const first = !this._hass;
+      this._hass = hass;
+      if (first) { this._load(); this._subscribe(); }
+    }
+
+    get hass() { return this._hass; }
+
+    getCardSize() { return this._config.compact ? 4 : 12; }
+
+    connectedCallback() { this._render(); if (this._hass && !this._data && !this._loading) this._load(); }
+
+    disconnectedCallback() {
+      if (this._unsub) { this._unsub().catch(() => {}); this._unsub = null; }
+      if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    }
+
+    _t(key, ...args) {
+      const lang = (this._hass && this._hass.language) || "en";
+      const table = /^(nb|nn|no)/.test(lang) ? STR.nb : STR.en;
+      const v = table[key] != null ? table[key] : STR.en[key];
+      return typeof v === "function" ? v(...args) : v;
+    }
+
+    async _load() {
+      if (!this._hass || this._loading) return;
+      this._loading = true;
+      try {
+        this._data = await this._hass.callWS({ type: "plex_picks/data", art: !this._config.compact });
+        this._error = null;
+      } catch (e) {
+        this._error = e;
+      } finally {
+        this._loading = false;
+        this._render();
+      }
+    }
+
+    _subscribe() {
+      if (!this._hass || this._unsub || !this._hass.connection) return;
+      this._hass.connection.subscribeEvents(() => this._load(), "plex_picks_updated").then((u) => { this._unsub = u; }).catch(() => {});
+      this._timer = setInterval(() => this._load(), 10 * 60 * 1000);
+    }
+
+    _rows() {
+      const all = (this._data && this._data.payload && this._data.payload.rows) || [];
+      const want = this._config.rows ? this._config.rows.map(String) : null;
+      const skip = (this._config.exclude || []).map(String);
+      const libs = this._config.libraries ? this._config.libraries.map((l) => String(l).toLowerCase()) : null;
+      let rows = all.filter((r) => {
+        if (want && !want.includes(r.kind) && !want.includes(r.id)) return false;
+        if (skip.includes(r.kind) || skip.includes(r.id)) return false;
+        if (this._config.slug && r.slug && r.slug !== this._config.slug) return false;
+        if (libs && r.library && !libs.includes(String(r.library).toLowerCase())) return false;
+        return r.items && r.items.length;
+      });
+      if (want) {
+        const rank = (r) => Math.min(...[want.indexOf(r.kind), want.indexOf(r.id)].filter((i) => i >= 0));
+        rows = rows.slice().sort((a, b) => rank(a) - rank(b));
+      }
+      if (this._config.compact) rows = rows.slice(0, 1);
+      return rows;
+    }
+
+    _players() {
+      const ids = this._config.players;
+      if (ids && ids.length) {
+        return ids.map((id) => { const s = this._hass && this._hass.states[id]; return { entity_id: id, name: s ? (s.attributes.friendly_name || id) : id }; });
+      }
+      return (this._data && this._data.players) || [];
+    }
+
+    _rowTitle(row) {
+      if (row.kind === "continue") return this._t("continue");
+      if (row.kind === "recent") return this._t("recent");
+      return row.title;
+    }
+
+    _render() {
+      const root = this.shadowRoot;
+      if (!root) return;
+      let body;
+      if (this._error) {
+        body = `<div class="msg">${esc(this._t("notSetUp"))}</div>`;
+      } else if (!this._data) {
+        body = `<div class="msg" aria-busy="true">${esc(this._t("loading"))}…</div>`;
+      } else {
+        const rows = this._rows();
+        const any = ((this._data.payload || {}).rows || []).length;
+        if (!rows.length) body = `<div class="msg">${esc(this._t(any ? "noMatch" : "noRows"))}</div>`;
+        else body = rows.map((r) => this._renderRow(r)).join("");
+      }
+      const title = this._config.title ? `<div class="title">${esc(this._config.title)}</div>` : "";
+      root.innerHTML = `<style>${CSS}</style><ha-card>${title}${body}</ha-card>`;
+      root.querySelectorAll(".tile").forEach((el) => {
+        el.addEventListener("click", () => this._open(el.dataset.row, el.dataset.key, el));
+      });
+      root.querySelectorAll(".scroller").forEach((sc) => sc.addEventListener("keydown", (ev) => this._arrows(ev, sc)));
+    }
+
+    _renderRow(row) {
+      const items = row.items.slice(0, this._config.max_items || 40);
+      const showLib = row.library && ["picked", "again", "popular", "seasonal", "shortlist"].includes(row.kind);
+      const head = `<div class="rowhead"><h3>${esc(this._rowTitle(row))}</h3>${showLib ? `<span class="pill">${esc(row.library)}</span>` : ""}<span class="count">${items.length}</span></div>`;
+      const tiles = items.map((it) => this._renderTile(row, it)).join("");
+      return `<section class="row" aria-label="${esc(this._rowTitle(row))}">${head}<div class="scroller" role="list">${tiles}</div></section>`;
+    }
+
+    _renderTile(row, it) {
+      const pct = it.progress != null ? Math.round(it.progress * 100) : null;
+      const meta = [it.subtitle, it.year, it.library && row.kind === "recent" ? it.library : null].filter(Boolean).join(" · ");
+      const label = [it.title, it.year ? `(${it.year})` : "", pct != null ? this._t("watched", pct) : ""].filter(Boolean).join(" ");
+      const badge = it.type === "show" || it.type === "episode" ? "TV" : (it.library && /4k/i.test(it.library) ? "4K" : "");
+      const img = it.thumb
+        ? `<img src="${esc(it.thumb)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="ph" style="display:none">${esc(it.title)}</div>`
+        : `<div class="ph">${esc(it.title)}</div>`;
+      return `<button class="tile" role="listitem" data-row="${esc(row.id)}" data-key="${esc(it.rating_key)}" aria-label="${esc(label)}">
+        <div class="poster">${img}${badge ? `<span class="badge">${badge}</span>` : ""}${pct != null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}</div>
+        <div class="cap"><div class="t">${esc(it.title)}</div>${meta ? `<div class="m">${esc(meta)}</div>` : ""}</div>
+      </button>`;
+    }
+
+    _arrows(ev, scroller) {
+      if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return;
+      const tiles = Array.from(scroller.querySelectorAll(".tile"));
+      const i = tiles.indexOf(this.shadowRoot.activeElement);
+      if (i < 0) return;
+      const next = tiles[i + (ev.key === "ArrowRight" ? 1 : -1)];
+      if (next) { ev.preventDefault(); next.focus(); next.scrollIntoView({ block: "nearest", inline: "nearest" }); }
+    }
+
+    _find(rowId, key) {
+      const rows = (this._data && this._data.payload && this._data.payload.rows) || [];
+      const row = rows.find((r) => r.id === rowId);
+      const item = row && row.items.find((i) => String(i.rating_key) === String(key));
+      return { row, item };
+    }
+
+    _dur(ms) {
+      if (!ms) return "";
+      const m = Math.round(ms / 60000);
+      return m >= 60 ? `${Math.floor(m / 60)} ${this._t("h")} ${m % 60} ${this._t("min")}` : `${m} ${this._t("min")}`;
+    }
+
+    _open(rowId, key, fromEl) {
+      const { row, item } = this._find(rowId, key);
+      if (!item) return;
+      this._lastFocus = fromEl || null;
+      const players = this._players();
+      const server = (this._data && this._data.server) || {};
+      const c = item.colors || {};
+      const hex = c.topLeft && /^[0-9a-f]{6}$/i.test(c.topLeft) ? `#${c.topLeft}` : null;
+      const tintTop = hex ? `${hex}99` : "rgba(0,0,0,0.35)";
+      const tintFlat = hex || "rgb(48,48,48)";
+      const heroStyle = item.art
+        ? `background-image: linear-gradient(to bottom, ${tintTop}, transparent 45%), url('${esc(item.art)}')`
+        : `background: linear-gradient(160deg, ${tintFlat}, var(--card-background-color, #1e1e1e))`;
+      const meta = [item.year, this._dur(item.duration_ms), item.content_rating, item.audience_rating ? `★ ${item.audience_rating}` : (item.rating ? `★ ${item.rating}` : null),
+        item.leaf_count ? this._t("episodes", item.viewed_leaf_count || 0, item.leaf_count) : null].filter(Boolean);
+      const pct = item.progress != null ? Math.round(item.progress * 100) : null;
+      const reason = row && row.kind === "because" && row.seed ? `<p class="reason">${esc(this._t("because"))} <b>${esc(row.seed)}</b></p>` : (row && !["continue", "recent"].includes(row.kind) ? `<p class="reason">${esc(this._rowTitle(row))}${row.library ? ` · ${esc(row.library)}` : ""}</p>` : "");
+      const people = [
+        item.directors && item.directors.length ? `<b>${esc(item.directors.length > 1 ? this._t("directors") : this._t("director"))}:</b> ${esc(item.directors.join(", "))}` : "",
+        item.cast && item.cast.length ? `<b>${esc(this._t("cast"))}:</b> ${esc(item.cast.join(", "))}` : "",
+      ].filter(Boolean).join("<br>");
+      const buttons = players.length
+        ? players.map((p) => `<button class="btn play" data-player="${esc(p.entity_id)}" data-name="${esc(p.name)}">▶ ${esc(this._t("playOn"))} ${esc(p.name)}</button>`).join("")
+        : `<span class="status">${esc(this._t("noPlayers"))}</span>`;
+      const plexUrl = server.id ? `https://app.plex.tv/desktop/#!/server/${esc(server.id)}/details?key=%2Flibrary%2Fmetadata%2F${esc(item.rating_key)}` : "https://app.plex.tv/";
+      const overlay = document.createElement("div");
+      overlay.className = "overlay";
+      overlay.innerHTML = `
+        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pp-title" tabindex="-1">
+          <div class="hero" style="${heroStyle}"><button class="close" aria-label="${esc(this._t("close"))}">×</button></div>
+          <div class="body">
+            <h2 id="pp-title">${esc(item.title)}</h2>
+            ${item.subtitle ? `<div class="sub">${esc(item.subtitle)}${pct != null ? ` · ${esc(this._t("watched", pct))}` : ""}</div>` : (pct != null ? `<div class="sub">${esc(this._t("watched", pct))}</div>` : "")}
+            ${item.tagline ? `<div class="sub"><i>${esc(item.tagline)}</i></div>` : ""}
+            <div class="meta">${meta.map((m) => `<span>${esc(m)}</span>`).join("")}</div>
+            ${item.genres && item.genres.length ? `<div class="chips">${item.genres.map((g) => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
+            ${reason}
+            ${item.summary ? `<p class="summary">${esc(item.summary)}</p>` : ""}
+            ${people ? `<p class="people">${people}</p>` : ""}
+            <div class="actions">${buttons}<a class="btn secondary" href="${plexUrl}" target="_blank" rel="noopener">${esc(this._t("openPlex"))}</a><div class="status" aria-live="polite"></div></div>
+          </div>
+        </div>`;
+      const close = () => {
+        overlay.remove();
+        document.removeEventListener("keydown", onKey);
+        if (this._lastFocus) this._lastFocus.focus();
+      };
+      const onKey = (ev) => { if (ev.key === "Escape") close(); };
+      overlay.addEventListener("click", (ev) => { if (ev.target === overlay) close(); });
+      overlay.querySelector(".close").addEventListener("click", close);
+      document.addEventListener("keydown", onKey);
+      overlay.querySelectorAll(".play").forEach((b) => b.addEventListener("click", () => this._play(item, b, overlay)));
+      this.shadowRoot.appendChild(overlay);
+      overlay.querySelector(".sheet").focus();
+    }
+
+    async _play(item, button, overlay) {
+      const status = overlay.querySelector(".status");
+      const name = button.dataset.name;
+      const buttons = overlay.querySelectorAll(".play");
+      buttons.forEach((b) => (b.disabled = true));
+      status.className = "status";
+      status.textContent = this._t("sending", name);
+      try {
+        await this._hass.callService("plex_picks", "play", {
+          rating_key: String(item.play_key || item.rating_key),
+          player: button.dataset.player,
+          media_type: item.type === "episode" ? "episode" : item.type === "show" ? "show" : "movie",
+          resume: item.progress != null && item.progress > 0.02,
+        });
+        status.textContent = this._t("sent", name);
+        this.dispatchEvent(new CustomEvent("hass-notification", { detail: { message: this._t("sent", name) }, bubbles: true, composed: true }));
+      } catch (e) {
+        status.className = "status err";
+        status.textContent = `${this._t("failed")}: ${(e && (e.message || e.error)) || e}`;
+      } finally {
+        buttons.forEach((b) => (b.disabled = false));
+      }
+    }
+  }
+
+  /* Home Assistant's frontend replaces the custom element registry's methods as it starts (its scoped-registry
+   * polyfill keeps its own table), so an element defined before that point is reported as not existing afterwards.
+   * This file is imported by the page alongside the frontend itself, so it can run first: register once the frontend's
+   * root element is known, which is immediate when the file arrives as a dashboard resource. */
+  function whenFrontendReady(fn) {
+    const ready = () => !!customElements.get("home-assistant");
+    if (ready()) { fn(); return; }
+    let tries = 0;
+    const timer = setInterval(() => { if (ready() || ++tries > 600) { clearInterval(timer); fn(); } }, 50);
+  }
+  whenFrontendReady(() => {
+    if (!customElements.get("plex-picks-card")) customElements.define("plex-picks-card", PlexPicksCard);
+    window.customCards = window.customCards || [];
+    if (!window.customCards.some((c) => c.type === "plex-picks-card")) {
+      window.customCards.push({ type: "plex-picks-card", name: "Plex Picks", description: "Shortlist's recommendation rows from Plex, Netflix-style, with Play on a TV.", preview: true });
+    }
+  });
+})();

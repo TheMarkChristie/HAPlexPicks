@@ -1,0 +1,85 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Koble til Plex",
+        "description": "Plex Media Server som Shortlist skriver rader til, og eierens token. Åpne en tittel i Plex Web, velg Get Info og så View XML: tokenet er X-Plex-Token-verdien i adressefeltet.",
+        "data": {
+          "url": "Server-URL",
+          "token": "Plex-token"
+        },
+        "data_description": {
+          "url": "For eksempel https://din-server.example.com:32400",
+          "token": "Blir på denne Home Assistant; plakater går gjennom en mellomtjener, så tokenet når aldri en nettleser."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Plex-token",
+        "description": "{server} avviste det lagrede tokenet. Lim inn et nytt.",
+        "data": {
+          "token": "Plex-token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Serveren svarte ikke på den adressen.",
+      "invalid_auth": "Tokenet ble ikke godtatt."
+    },
+    "abort": {
+      "already_configured": "Denne Plex-serveren er allerede satt opp.",
+      "reauth_successful": "Tokenet ble oppdatert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Valg for Plex Picks",
+        "data": {
+          "players": "TV-er og spillere for Spill-knappen",
+          "plex_player_for": "Plex-klient for hver TV",
+          "continue_watching": "Vis eierens Fortsett å se-rad",
+          "recently_added": "Vis en Nytt på serveren-rad",
+          "recent_size": "Titler i Nytt på serveren",
+          "row_size": "Flest titler lest per rad",
+          "interval_minutes": "Les Plex hver",
+          "shortlist_url": "Shortlist-URL",
+          "shortlist_token": "Shortlist API-token"
+        },
+        "data_description": {
+          "players": "Plex-klienter, Cast-enheter, Samsung- eller Android-TV-er. En Samsung- eller Android-TV blir bedt om å åpne Plex først.",
+          "plex_player_for": "Én linje per TV når Plex-klienten som dukker opp for den skal navngis: media_player.tv = media_player.plex_tv",
+          "shortlist_url": "Valgfritt, for siste-kjøring-sensoren: der Shortlists webgrensesnitt er, for eksempel http://local-shortlist:5959",
+          "shortlist_token": "Valgfritt: Shortlists eier-API-token fra innstillingene"
+        }
+      }
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Oppdater",
+      "description": "Les radene fra Plex igjen nå."
+    },
+    "play": {
+      "name": "Spill",
+      "description": "Spill en tittel på en TV gjennom Plex-integrasjonen.",
+      "fields": {
+        "rating_key": {
+          "name": "Rating key",
+          "description": "Plex-nøkkelen til filmen, serien eller episoden."
+        },
+        "player": {
+          "name": "Spiller",
+          "description": "En Plex-klient, en Cast-enhet, eller en Samsung- eller Android-TV (bes om å åpne Plex først)."
+        },
+        "media_type": {
+          "name": "Medietype",
+          "description": "movie, show eller episode."
+        },
+        "resume": {
+          "name": "Fortsett",
+          "description": "Fortsett der det slapp."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+# Shortlist (github.com/stevezau/shortlist) as a local Home Assistant add-on: the published image, nothing built here.
+# Supervisor pulls ghcr.io/stevezau/shortlist:<version> for the Green's architecture (the image is amd64 + arm64).
+# Copy this folder to /addons/shortlist on the Home Assistant host, then Settings > Add-ons > Add-on store > (menu) >
+# Check for updates, and Shortlist appears under "Local add-ons".
+name: Shortlist
+version: "1.12.1"
+slug: shortlist
+description: Netflix-style recommendation rows on Plex Home, built from each person's watch history (stevezau/shortlist), wrapped as a local add-on.
+url: https://github.com/stevezau/shortlist
+arch:
+  - aarch64
+  - amd64
+image: ghcr.io/stevezau/shortlist
+# The image has its own init (tini) and drops to PUID/PGID with gosu, so Supervisor's init is not wanted.
+init: false
+startup: services
+boot: auto
+ports:
+  5959/tcp: 5959
+ports_description:
+  5959/tcp: Shortlist web interface
+webui: http://[HOST]:[PORT:5959]
+watchdog: http://[HOST]:[PORT:5959]/api/system/health
+# Shortlist keeps everything under /config; the add-on's own config folder is mounted there.
+map:
+  - addon_config:rw
+environment:
+  TZ: Europe/Oslo
+  # the add-on's folder belongs to root; run Shortlist as root inside its container so it can write there
+  PUID: "0"
+  PGID: "0"
+  # First install: every run only logs what it would change. Set to "0" (or remove) after reading a dry run, then Rebuild.
+  SHORTLIST_DRY_RUN: "1"
+options: {}
+schema: {}

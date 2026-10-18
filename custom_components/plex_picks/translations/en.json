@@ -1,0 +1,85 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Plex",
+        "description": "The Plex Media Server that Shortlist writes rows to, and the owner's token. In Plex Web open any title, choose Get Info, then View XML: the token is the X-Plex-Token value in the address bar.",
+        "data": {
+          "url": "Server URL",
+          "token": "Plex token"
+        },
+        "data_description": {
+          "url": "For example https://your-server.example.com:32400",
+          "token": "Stays on this Home Assistant; posters are proxied so it never reaches a browser."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Plex token",
+        "description": "{server} rejected the saved token. Paste a new one.",
+        "data": {
+          "token": "Plex token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "The server did not answer at that address.",
+      "invalid_auth": "The token was not accepted."
+    },
+    "abort": {
+      "already_configured": "This Plex server is already set up.",
+      "reauth_successful": "The token was updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Plex Picks options",
+        "data": {
+          "players": "TVs and players for the Play button",
+          "plex_player_for": "Plex client for each TV",
+          "continue_watching": "Show the owner's Continue watching row",
+          "recently_added": "Show a New on the server row",
+          "recent_size": "Titles in New on the server",
+          "row_size": "Most titles read per row",
+          "interval_minutes": "Read Plex every",
+          "shortlist_url": "Shortlist URL",
+          "shortlist_token": "Shortlist API token"
+        },
+        "data_description": {
+          "players": "Plex clients, Cast devices, Samsung or Android TVs. A Samsung or Android TV is told to open Plex first.",
+          "plex_player_for": "One line per TV when the Plex client that appears for it should be named: media_player.tv = media_player.plex_tv",
+          "shortlist_url": "Optional, for the last-run sensor: where Shortlist's web interface is, for example http://local-shortlist:5959",
+          "shortlist_token": "Optional: Shortlist's owner API token from its Settings"
+        }
+      }
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Refresh",
+      "description": "Read the rows from Plex again now."
+    },
+    "play": {
+      "name": "Play",
+      "description": "Play a title on a TV through the Plex integration.",
+      "fields": {
+        "rating_key": {
+          "name": "Rating key",
+          "description": "The Plex rating key of the film, show or episode."
+        },
+        "player": {
+          "name": "Player",
+          "description": "A Plex client, a Cast device, or a Samsung or Android TV (told to open Plex first)."
+        },
+        "media_type": {
+          "name": "Media type",
+          "description": "movie, show or episode."
+        },
+        "resume": {
+          "name": "Resume",
+          "description": "Continue from where it was left."
+        }
+      }
+    }
+  }
+}
