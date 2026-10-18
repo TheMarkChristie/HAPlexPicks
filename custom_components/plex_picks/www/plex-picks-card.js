@@ -9,6 +9,7 @@
  *   max_items: 40                                      # per row
  *   players: [media_player.tv]                         # override the integration's Play targets
  *   title: ""                                          # a heading above the rows; none by default
+ *   merge_libraries: true                              # one films row and one shows row per kind, whatever the libraries; false keeps Plex's per-library rows
  *
  * The integration serves this file and registers it as a dashboard resource; nothing to install.
  * Copyright (c) 2026 Mark Christie. MIT licence.
@@ -23,6 +24,8 @@
       sending: (tv) => `Sending to ${tv}…`, sent: (tv) => `Playing on ${tv}`, failed: "Could not play", min: "min", h: "h",
       cast: "Cast", director: "Director", directors: "Directors", episodes: (n, t) => `${n} of ${t} episodes watched`,
       noPlayers: "No TVs configured. Add players in the integration's options.", lib: "Library",
+      pickedFilms: "Films picked for you", pickedShows: "Shows picked for you", againFilms: "Films to watch again", againShows: "Shows to watch again",
+      popularFilms: "Popular films on the server", popularShows: "Popular shows on the server",
     },
     nb: {
       continue: "Fortsett å se", recent: "Nytt på serveren", notSetUp: "Plex Picks er ikke satt opp ennå. Legg til integrasjonen under Innstillinger > Enheter og tjenester.",
@@ -32,6 +35,8 @@
       sending: (tv) => `Sender til ${tv}…`, sent: (tv) => `Spiller på ${tv}`, failed: "Kunne ikke spille", min: "min", h: "t",
       cast: "Skuespillere", director: "Regi", directors: "Regi", episodes: (n, t) => `${n} av ${t} episoder sett`,
       noPlayers: "Ingen TV-er er satt opp. Legg til spillere i integrasjonens valg.", lib: "Bibliotek",
+      pickedFilms: "Filmer valgt for deg", pickedShows: "Serier valgt for deg", againFilms: "Filmer å se igjen", againShows: "Serier å se igjen",
+      popularFilms: "Populære filmer på serveren", popularShows: "Populære serier på serveren",
     },
   };
 
@@ -92,7 +97,8 @@
     @media (max-width: 600px) { .overlay { padding: 0; align-items: flex-end; } .sheet { border-radius: 16px 16px 0 0; max-height: 96vh; } .body { padding: 0 16px 18px; } .body h2 { font-size: 1.35em; } }
   `;
 
-  const DEFAULTS = { rows: null, exclude: [], slug: null, libraries: null, compact: false, max_items: 40, players: null, title: "" };
+  const DEFAULTS = { rows: null, exclude: [], slug: null, libraries: null, compact: false, max_items: 40, players: null, title: "", merge_libraries: true };
+  const MERGEABLE = ["picked", "again", "because", "popular", "seasonal", "shortlist"];
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   class PlexPicksCard extends HTMLElement {
@@ -171,12 +177,41 @@
         if (libs && r.library && !libs.includes(String(r.library).toLowerCase())) return false;
         return r.items && r.items.length;
       });
+      if (this._config.merge_libraries !== false) rows = this._merge(rows);
       if (want) {
         const rank = (r) => Math.min(...[want.indexOf(r.kind), want.indexOf(r.id)].filter((i) => i >= 0));
         rows = rows.slice().sort((a, b) => rank(a) - rank(b));
       }
       if (this._config.compact) rows = rows.slice(0, 1);
       return rows;
+    }
+
+    /* Shortlist writes one collection per library (Plex allows nothing else), so "Movies Picked for You" and
+     * "4K Movies Picked for You" arrive as two rows. Here rows of the same kind, person and media type become one:
+     * films in one row, shows in another, the same title from two libraries shown once. */
+    _merge(rows) {
+      const out = [];
+      const groups = new Map();
+      for (const r of rows) {
+        if (!MERGEABLE.includes(r.kind) || !r.library_type) { out.push(r); continue; }
+        const tail = r.kind === "because" ? (r.seed || r.title) : (r.kind === "seasonal" || r.kind === "shortlist" ? r.title : "");
+        const key = [r.kind, r.slug || "", r.library_type, tail].join("|");
+        let g = groups.get(key);
+        if (!g) {
+          g = { ...r, id: "m:" + key, library: null, libraries: [], items: [], count: 0, merged: true, _seen: new Set() };
+          groups.set(key, g);
+          out.push(g);
+        }
+        g.libraries.push(r.library);
+        for (const it of r.items) {
+          const sig = `${it.title}|${it.year || ""}`.toLowerCase();
+          if (g._seen.has(sig)) continue;
+          g._seen.add(sig);
+          g.items.push(it);
+        }
+        g.count = g.items.length;
+      }
+      return out;
     }
 
     _players() {
@@ -190,6 +225,12 @@
     _rowTitle(row) {
       if (row.kind === "continue") return this._t("continue");
       if (row.kind === "recent") return this._t("recent");
+      if (row.merged) {
+        const films = row.library_type === "movie";
+        if (row.kind === "picked") return this._t(films ? "pickedFilms" : "pickedShows");
+        if (row.kind === "again") return this._t(films ? "againFilms" : "againShows");
+        if (row.kind === "popular") return this._t(films ? "popularFilms" : "popularShows");
+      }
       return row.title;
     }
 
@@ -247,8 +288,9 @@
     }
 
     _find(rowId, key) {
-      const rows = (this._data && this._data.payload && this._data.payload.rows) || [];
-      const row = rows.find((r) => r.id === rowId);
+      // rendered rows first (merged rows exist only there), then the raw payload
+      const raw = (this._data && this._data.payload && this._data.payload.rows) || [];
+      const row = this._rows().find((r) => r.id === rowId) || raw.find((r) => r.id === rowId);
       const item = row && row.items.find((i) => String(i.rating_key) === String(key));
       return { row, item };
     }

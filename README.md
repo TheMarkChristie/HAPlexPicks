@@ -43,7 +43,12 @@ compact: false                                     # one row with smaller poster
 max_items: 40                                      # per row
 players: [media_player.living_room_tv]             # override the integration's Play targets
 title: ""                                          # a heading above the rows
+merge_libraries: true                              # one films row and one shows row per kind, whatever the libraries
 ```
+
+Plex keeps a collection inside one library, so Shortlist writes "Movies Picked for You" and "4K Movies Picked for
+You" separately. The card merges rows of the same kind and media type into one films row and one shows row, and
+shows a title held in two libraries once. Set `merge_libraries: false` to see Plex's per-library rows instead.
 
 Row kinds: `continue` (the owner's Continue Watching), `because`, `picked`, `again`, `popular`, `seasonal`,
 `requests`, `shortlist` (any other Shortlist row), `recent` (New on the server).
