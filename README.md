@@ -14,9 +14,10 @@ Tap a poster for the details and a Play button that sends the title to a TV thro
 
 - A Plex Media Server and its owner token. Plex Web: open any title, Get Info, View XML, then copy the
   `X-Plex-Token` value from the address bar.
-- Shortlist running against that server (the `addon/shortlist` folder here wraps it as a local Home Assistant add-on
-  for Home Assistant OS; any Docker host works too). Without Shortlist you still get Continue Watching and New on the
-  server.
+- Shortlist running against that server. On Home Assistant OS, add the add-on repository
+  [TheMarkChristie/HAAddons](https://github.com/TheMarkChristie/HAAddons) (Settings > Add-ons > Add-on store >
+  Repositories) and install Shortlist from the store; any Docker host works too. Without Shortlist you still get
+  Continue Watching and New on the server, but no recommendation rows.
 - For the Play button: the core **Plex** integration set up in Home Assistant, so the Plex app on a TV (or a Cast
   device) is a media player it can drive.
 
@@ -49,6 +50,10 @@ Row kinds: `continue` (the owner's Continue Watching), `because`, `picked`, `aga
 
 A dedicated **Watch** dashboard is one panel view holding the card alone (`dashboard/watch.yaml`). The same card in
 compact mode sits in a Sections view on a Home dashboard (`dashboard/home-card.yaml`).
+
+Where the rows come from: Shortlist reads each person's Plex watch history nightly and writes its picks to Plex as
+collections (Because you watched, Picked for You, Watch it again...). Plex Picks shows those rows; it does not invent
+its own. Until Shortlist has run, the card shows only Continue Watching and New on the server.
 
 ## Entities and services
 

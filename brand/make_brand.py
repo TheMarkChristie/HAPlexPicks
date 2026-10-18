@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-ADDON = os.path.join(ROOT, "addon", "shortlist")
+ADDON = r"V:\PCF\HAAddons\shortlist"   # the Shortlist add-on now lives in the HAAddons repository
 OUT = os.path.join(ROOT, "custom_components", "plex_picks", "brand")   # shipped with the integration (HA 2026.3+ serves it)
 
 DARK = (30, 30, 32, 255)
