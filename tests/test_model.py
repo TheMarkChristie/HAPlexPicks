@@ -150,7 +150,7 @@ def test_sort_rows_by_kind_then_library_order():
         m.Row(id="c3", kind=m.KIND_PICKED, title="Picked", library="Movies"),
     ]
     out = m.sort_rows(rows, ["Movies", "TV Shows"])
-    assert [r.id for r in out] == ["continue", "c2", "c3", "c1", "recent"]
+    assert [r.id for r in out] == ["c2", "continue", "c3", "c1", "recent"]   # Because you watched first
 
 
 def test_people_payload_and_summary():

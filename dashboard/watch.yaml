@@ -9,8 +9,8 @@ views:
     cards:
       - type: custom:plex-picks-card
         rows:
+          - because       # Mark, 18 Oct 2026: "they need to be at the top of the list"
           - continue
-          - because
           - picked
           - again
           - shortlist      # any other Shortlist row, whatever it has been renamed to

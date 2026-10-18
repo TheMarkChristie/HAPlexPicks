@@ -26,8 +26,9 @@ KIND_RECENT = "recent"
 # what the New on the server row keeps: films and TV (episodes and seasons fold into their show)
 PLAYABLE_TYPES = ("movie", "show", "season", "episode")
 
-# the order rows are shown in: what you were watching first, Shortlist's rows, then what is new
-KIND_ORDER = [KIND_CONTINUE, KIND_BECAUSE, KIND_PICKED, KIND_AGAIN, KIND_POPULAR, KIND_SEASONAL, KIND_REQUESTS, KIND_SHORTLIST, KIND_RECENT]
+# the order rows are shown in: Because you watched first (Mark, 18 Oct 2026: "they need to be at the top of the list"),
+# then what you were watching, Shortlist's other rows, then what is new
+KIND_ORDER = [KIND_BECAUSE, KIND_CONTINUE, KIND_PICKED, KIND_AGAIN, KIND_POPULAR, KIND_SEASONAL, KIND_REQUESTS, KIND_SHORTLIST, KIND_RECENT]
 
 _LEADING_SYMBOLS = re.compile(r"^[^\w\"'(]+", re.UNICODE)
 _BECAUSE = re.compile(r"because you watched\s*(.*)$", re.IGNORECASE)
