@@ -1,6 +1,9 @@
 """Reads the Shortlist rows (and the owner's Continue Watching and what is new) from Plex on a timer."""
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
 import logging
 import time
 from datetime import timedelta
@@ -16,12 +19,18 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import (
     CONF_CONTINUE, CONF_INTERVAL, CONF_RECENT, CONF_RECENT_SIZE, CONF_ROW_SIZE, CONF_SERVER_ID, CONF_SERVER_NAME,
     CONF_SHORTLIST_TOKEN, CONF_SHORTLIST_URL, CONF_TOKEN, CONF_URL, DEFAULT_INTERVAL, DEFAULT_RECENT_SIZE,
-    DEFAULT_ROW_SIZE, DOMAIN, EVENT_UPDATED, LABEL_PLAIN, NAME,
+    DEFAULT_ROW_SIZE, EVENT_UPDATED, LABEL_CACHE_HOURS, LABEL_PLAIN, NAME, READ_BUDGET_SECONDS,
 )
-from .model import Row, continue_row, is_shortlist_collection, payload, recent_row, row_from_collection, sort_rows
+from .model import KIND_CONTINUE, KIND_RECENT, Row, continue_row, is_shortlist_collection, payload, recent_row, row_from_collection, sort_rows
 from .plex_api import PlexAuthError, PlexClient, PlexError
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def rows_version(data: dict[str, Any]) -> str:
+    """A short fingerprint of what the card draws, so it can skip a redraw when nothing changed."""
+    body = json.dumps(data.get("rows", []), sort_keys=True, default=str)
+    return hashlib.sha1(body.encode("utf-8")).hexdigest()[:12]
 
 
 class PlexPicksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -37,6 +46,8 @@ class PlexPicksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         self.rows: list[Row] = []
         self.shortlist: dict[str, Any] = {}
+        self._labels: dict[str, tuple[float, str | None]] = {}   # library key -> (good until, Shortlist's label id)
+        self._rescan_labels = False
 
     @property
     def options(self) -> dict[str, Any]:
@@ -44,17 +55,38 @@ class PlexPicksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
-            rows = await self._read_rows()
+            async with asyncio.timeout(READ_BUDGET_SECONDS):
+                rows = await self._read_rows()
         except PlexAuthError as err:
             raise ConfigEntryAuthFailed("Plex rejected the token") from err
         except PlexError as err:
             raise UpdateFailed(str(err)) from err
+        except TimeoutError as err:
+            raise UpdateFailed(f"Plex took over {READ_BUDGET_SECONDS} s to answer") from err
         self.rows = rows
         self.shortlist = await self._read_shortlist()
         now = int(time.time())
-        data = {"payload": payload(self.server, rows, now), "shortlist": self.shortlist, "generated_at": now}
-        self.hass.bus.async_fire(EVENT_UPDATED, {"entry_id": self.entry.entry_id, "generated_at": now, "rows": len(rows)})
-        return data
+        body = payload(self.server, rows, now)
+        version = rows_version(body)
+        before = (self.data or {}).get("version")
+        if version != before:
+            self.hass.bus.async_fire(EVENT_UPDATED, {"entry_id": self.entry.entry_id, "generated_at": now,
+                                                     "version": version, "rows": len(rows)})
+        return {"payload": body, "shortlist": self.shortlist, "generated_at": now, "version": version}
+
+    def _previous(self, kind: str) -> list[Row]:
+        return [r for r in self.rows if r.kind == kind]
+
+    async def _plain_label(self, section_key: str) -> str | None:
+        """Shortlist's plain label id in one library (None: Shortlist has not written there), cached for a day."""
+        hit = self._labels.get(section_key)
+        if hit and not self._rescan_labels and time.monotonic() < hit[0]:
+            return hit[1]
+        labels = await self.client.labels(section_key)
+        plain = next((lab for lab in labels if str(lab.get("title") or "").lower() == LABEL_PLAIN), None)
+        label_id = str(plain.get("key")) if plain else None
+        self._labels[section_key] = (time.monotonic() + LABEL_CACHE_HOURS * 3600, label_id)
+        return label_id
 
     async def _read_rows(self) -> list[Row]:
         opts = self.options
@@ -64,8 +96,11 @@ class PlexPicksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if opts.get(CONF_CONTINUE, True):
             try:
                 rows.append(continue_row(await self.client.continue_watching(20), None))
+            except PlexAuthError:
+                raise
             except PlexError as err:
-                _LOGGER.debug("Continue Watching unavailable: %s", err)
+                _LOGGER.debug("Continue Watching not read (%s); keeping the last one", err)
+                rows += self._previous(KIND_CONTINUE)
 
         sections = await self.client.sections()
         order = [str(s.get("title")) for s in sections]
@@ -73,11 +108,10 @@ class PlexPicksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if section.get("type") not in ("movie", "show"):
                 continue
             key, title, lib_type = str(section.get("key")), str(section.get("title")), str(section.get("type"))
-            labels = await self.client.labels(key)
-            plain = next((lab for lab in labels if lab.get("title") == LABEL_PLAIN), None)
-            if plain is None:
+            label_id = await self._plain_label(key)
+            if label_id is None:
                 continue  # Shortlist has not written to this library
-            for coll in await self.client.collections(key, label_id=str(plain.get("key"))):
+            for coll in await self.client.collections(key, label_id=label_id):
                 rating_key = str(coll.get("ratingKey"))
                 detail = await self.client.collection(rating_key) or coll
                 tags = [str(t.get("tag")) for t in detail.get("Label", []) or []]
@@ -85,13 +119,17 @@ class PlexPicksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     continue
                 children = await self.client.children(rating_key, limit=row_size)
                 rows.append(row_from_collection(detail, tags, children, title, lib_type))
+        self._rescan_labels = False
 
         if opts.get(CONF_RECENT, True):
             try:
                 size = int(opts.get(CONF_RECENT_SIZE, DEFAULT_RECENT_SIZE))
                 rows.append(recent_row(await self.client.recently_added(size * 3), limit=size))
+            except PlexAuthError:
+                raise
             except PlexError as err:
-                _LOGGER.debug("Recently added unavailable: %s", err)
+                _LOGGER.debug("Recently added not read (%s); keeping the last one", err)
+                rows += self._previous(KIND_RECENT)
 
         return sort_rows(rows, order)
 
@@ -123,5 +161,8 @@ class PlexPicksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return keep
         return {"error": "token not accepted"}
 
-    async def async_refresh_now(self) -> None:
+    async def async_refresh_now(self, rescan_labels: bool = True) -> None:
+        """Read Plex again now; by default also look Shortlist's labels up again (Shortlist may have written to a
+        library it had not used before)."""
+        self._rescan_labels = rescan_labels
         await self.async_request_refresh()

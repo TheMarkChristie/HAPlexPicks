@@ -2,7 +2,7 @@
 (the Watch dashboard), at phone width, with the detail sheet open, and in compact mode. Saves PNGs under tests/out.
 
 The page inlines the card's script (file:// pages cannot fetch), stubs the slice of `hass` the card uses (callWS
-returns the sample payload, callService logs, subscribeEvents is a no-op) and defines a stand-in `home-assistant`
+returns the sample payload, callService logs, subscribeMessage is a no-op) and defines a stand-in `home-assistant`
 element so the card registers at once. Posters are SVG data URLs so the layout is judged, not Plex's artwork.
 
     python tests/render_card.py -> tests/out/card_panel.png, card_phone.png, card_sheet.png, card_compact.png
@@ -123,7 +123,7 @@ const DATA={json.dumps(data)};
 const hass={{language:'en',states:{{'media_player.77_oled_tq77s85daexxc':{{state:'on',attributes:{{friendly_name:'77" OLED'}}}}}},
   callWS:async(msg)=>{{ if(msg.type==='plex_picks/data') return DATA; throw new Error('unknown '+msg.type); }},
   callService:async(d,s,data)=>{{ console.log('service',d,s,JSON.stringify(data)); return {{}}; }},
-  connection:{{subscribeEvents:async()=>()=>{{}}}} }};
+  connection:{{subscribeMessage:async()=>()=>{{}}, subscribeEvents:async()=>()=>{{}}}} }};
 </script>
 <script>{script}</script>
 <script>

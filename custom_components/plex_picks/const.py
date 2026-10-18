@@ -11,6 +11,11 @@ CARD_FILE = "plex-picks-card.js"
 IMAGE_URL = "/api/plex_picks/img"
 IMAGE_KINDS = ("thumb", "art")
 SIGNED_URL_HOURS = 12
+# the only sizes the websocket signs, and so the only ones the proxy serves
+POSTER = "300x450"
+ROW_ART = "600x338"
+BACKDROP = "1280x720"
+IMAGE_SIZES = (POSTER, ROW_ART, BACKDROP)
 
 # config entry data
 CONF_URL = "url"
@@ -19,7 +24,7 @@ CONF_SERVER_NAME = "server_name"
 CONF_SERVER_ID = "server_id"
 
 # options
-CONF_PLAYERS = "players"                    # media_player entities offered on the Play button
+CONF_PLAYERS = "players"                    # media_player entities offered on the Play button; empty: the house's Cast devices
 CONF_PLEX_PLAYER_FOR = "plex_player_for"    # "media_player.tv=media_player.plex_tv" lines: the Plex client that appears when that TV opens Plex
 CONF_SHORTLIST_URL = "shortlist_url"        # optional: Shortlist's base URL, for run status
 CONF_SHORTLIST_TOKEN = "shortlist_token"    # optional: Shortlist's owner API token
@@ -36,9 +41,17 @@ MIN_INTERVAL = 5
 MAX_INTERVAL = 720
 
 # events and websocket
-EVENT_UPDATED = f"{DOMAIN}_updated"
+EVENT_UPDATED = f"{DOMAIN}_updated"            # fired when the rows changed, with their version
 WS_DATA = f"{DOMAIN}/data"
-WS_PLAY = f"{DOMAIN}/play"
+WS_SUBSCRIBE = f"{DOMAIN}/subscribe"           # any signed-in user (subscribe_events refuses custom events to non-admins)
+
+# how hard Plex is asked: one request at a time a third of a second apart, short timeouts, the whole read bounded,
+# and each library's Shortlist label looked up once a day (Shortlist writes at most nightly)
+PLEX_GAP_SECONDS = 0.34
+PLEX_TIMEOUT_SECONDS = 15
+IMAGE_TIMEOUT_SECONDS = 10
+READ_BUDGET_SECONDS = 120
+LABEL_CACHE_HOURS = 24
 
 # services
 SERVICE_REFRESH = "refresh"

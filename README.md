@@ -26,8 +26,9 @@ Tap a poster for the details and a Play button that sends the title to a TV thro
 1. HACS > Integrations > the three-dots menu > Custom repositories: add this repository as an Integration.
 2. Download Plex Picks, restart Home Assistant.
 3. Settings > Devices & services > Add integration > Plex Picks: the server URL and the token.
-4. The integration's Configure button: pick the TVs for the Play button, and optionally Shortlist's URL and owner API
-   token for a last-run sensor.
+4. The integration's Configure button: optionally Shortlist's URL and owner API token for a last-run sensor. The Play
+   button offers the house's Google Cast devices and asks which one every time; list players in Configure only to offer
+   other TVs instead.
 
 The card is served by the integration and registered as a dashboard resource; there is nothing else to install.
 The integration ships its own icon (Home Assistant 2026.3 or newer shows it without a brands submission).
@@ -41,7 +42,7 @@ slug: themarkchristie                              # whose Shortlist rows; defau
 libraries: [Movies, TV Shows]                      # only rows for these libraries; default all
 compact: false                                     # one row with smaller posters, for a Home dashboard section
 max_items: 40                                      # per row
-players: [media_player.living_room_tv]             # override the integration's Play targets
+players: [media_player.living_room_tv]             # the TVs offered on Play (default: the Cast devices)
 title: ""                                          # a heading above the rows
 merge_libraries: true                              # one films row and one shows row per kind, whatever the libraries
 ```
@@ -62,14 +63,16 @@ its own. Until Shortlist has run, the card shows only Continue Watching and New 
 
 ## Entities and services
 
-- `sensor.plex_picks_<slug>`: how many titles Shortlist has in rows for that person, with one line per row.
+- `sensor.plex_picks_picks_<slug>`: how many titles Shortlist has in rows for that person, with one line per row.
 - `sensor.plex_picks_continue_watching`, `sensor.plex_picks_recently_added`: counts, with the titles.
 - `sensor.plex_picks_shortlist_last_run`: when Shortlist's URL and token are configured.
 - `plex_picks.refresh`: read Plex again now. Plex is otherwise read every 30 minutes (configurable), and Shortlist's
   own webhook can point at a Home Assistant webhook automation that calls this.
-- `plex_picks.play`: `rating_key`, `player`, `media_type`, `resume`. A Plex client or Cast device plays at once; a
-  Samsung or Android TV is first told to open Plex, the Plex integration scans for clients, and the one that appears
-  for that TV plays. Name the pairing in the options when a TV's Plex client should be fixed.
+- `plex_picks.play`: `rating_key`, `player`, `media_type`, `resume`. A Cast device or a Plex client plays at once (the
+  Plex integration casts the title; nothing has to be opened first). Another TV entity on a box that also has a Cast
+  device with the same device name plays through that Cast device. Otherwise the TV is told to open Plex (a Samsung's
+  Plex source, or the Plex app through the box's Android Debug Bridge), the Plex integration scans for clients, and the
+  one that appears for that TV plays; name the pairing in the options when a TV's Plex client should be fixed.
 
 ## Privacy
 

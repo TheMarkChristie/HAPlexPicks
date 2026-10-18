@@ -23,6 +23,9 @@ KIND_REQUESTS = "requests"
 KIND_SHORTLIST = "shortlist"
 KIND_RECENT = "recent"
 
+# what the New on the server row keeps: films and TV (episodes and seasons fold into their show)
+PLAYABLE_TYPES = ("movie", "show", "season", "episode")
+
 # the order rows are shown in: what you were watching first, Shortlist's rows, then what is new
 KIND_ORDER = [KIND_CONTINUE, KIND_BECAUSE, KIND_PICKED, KIND_AGAIN, KIND_POPULAR, KIND_SEASONAL, KIND_REQUESTS, KIND_SHORTLIST, KIND_RECENT]
 
@@ -242,6 +245,8 @@ def recent_row(metadata: list[dict[str, Any]], title: str = "New on the server",
     seen: set[str] = set()
     items: list[Item] = []
     for md in metadata:
+        if md.get("type") not in PLAYABLE_TYPES:
+            continue  # the server-wide list also has music (audiobooks, albums), which a TV row cannot play
         item = item_from_metadata(md)
         if item.thumb_key in seen:
             continue

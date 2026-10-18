@@ -46,9 +46,9 @@
           "shortlist_token": "Shortlist API-token"
         },
         "data_description": {
-          "players": "Plex-klienter, Cast-enheter, Samsung- eller Android-TV-er. En Samsung- eller Android-TV blir bedt om å åpne Plex først.",
+          "players": "La stå tomt for å tilby husets Google Cast-enheter; kortet spør hvilken hver gang. Plex-klienter, Samsung- eller Android-TV-er kan føres opp i stedet.",
           "plex_player_for": "Én linje per TV når Plex-klienten som dukker opp for den skal navngis: media_player.tv = media_player.plex_tv",
-          "shortlist_url": "Valgfritt, for siste-kjøring-sensoren: der Shortlists webgrensesnitt er, for eksempel http://local-shortlist:5959",
+          "shortlist_url": "Valgfritt, for sensoren for siste kjøring: adressen til Shortlists nettgrensesnitt, for eksempel http://<repository-id>-shortlist:5959 (vertsnavnet på tilleggets Info-side)",
           "shortlist_token": "Valgfritt: Shortlists eier-API-token fra innstillingene"
         }
       }

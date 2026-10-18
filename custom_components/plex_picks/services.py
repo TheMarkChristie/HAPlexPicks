@@ -1,19 +1,19 @@
 """Services: plex_picks.refresh (read Plex again now) and plex_picks.play (play a title on a TV).
 
 Play works through the core Plex integration: a title is handed to media_player.play_media as plex://<server>/<key>.
-A Plex client (the Plex app on a TV, or a Cast device) takes that directly. A Samsung or Android TV entity is first
-told to open Plex, the Plex integration is asked to scan for clients, and the Plex client that appears for that TV
-is the one that plays."""
+A Cast device takes that directly (the Plex integration casts it), and so does a Plex client. Cast devices are the
+default players (Mark, 18 Oct 2026). Any other TV entity is first matched to a Cast device on the same box (the same
+device name); failing that, it is told to open Plex (a Samsung's Plex source, or the Plex app through the box's
+Android Debug Bridge), the Plex integration is asked to scan for clients, and the Plex client that appears plays."""
 from __future__ import annotations
 
 import asyncio
 import logging
 import re
-from typing import Any
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 
 from .const import (
@@ -33,21 +33,18 @@ PLAY_SCHEMA = vol.Schema({
 
 @callback
 def async_register_services(hass: HomeAssistant) -> None:
+    """Registered once, in async_setup; each call looks the loaded entry up."""
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, _refresh)
     hass.services.async_register(DOMAIN, SERVICE_PLAY, _play, schema=PLAY_SCHEMA)
-
-
-@callback
-def async_unregister_services(hass: HomeAssistant) -> None:
-    for name in (SERVICE_REFRESH, SERVICE_PLAY):
-        if hass.services.has_service(DOMAIN, name):
-            hass.services.async_remove(DOMAIN, name)
 
 
 async def _refresh(call: ServiceCall) -> None:
     from . import coordinators  # noqa: PLC0415
 
-    for coordinator in coordinators(call.hass):
+    loaded = coordinators(call.hass)
+    if not loaded:
+        raise ServiceValidationError("Plex Picks is not loaded")
+    for coordinator in loaded:
         await coordinator.async_refresh_now()
 
 
@@ -86,6 +83,27 @@ def _tokens(name: str) -> set[str]:
     return {t for t in re.split(r"[^a-z0-9]+", (name or "").lower()) if len(t) > 2}
 
 
+def _device_name(hass: HomeAssistant, entity_id: str) -> str:
+    entry = er.async_get(hass).async_get(entity_id)
+    if entry and entry.device_id and (device := dr.async_get(hass).async_get(entry.device_id)):
+        return device.name_by_user or device.name or entity_id
+    state = hass.states.get(entity_id)
+    return state.name if state else entity_id
+
+
+def _same_box(hass: HomeAssistant, entity_id: str, platform: str) -> str | None:
+    """The media player of another integration on the same box: the same device, or a device with the same name
+    (the living room Google TV Streamer's Cast device and its Android Debug Bridge are both "Living Room TV")."""
+    reg = er.async_get(hass)
+    chosen = reg.async_get(entity_id)
+    name = _device_name(hass, entity_id).casefold()
+    for e in reg.entities.values():
+        if e.platform == platform and e.domain == "media_player" and not e.disabled_by and (
+                (chosen and e.device_id and e.device_id == chosen.device_id) or _device_name(hass, e.entity_id).casefold() == name):
+            return e.entity_id
+    return None
+
+
 async def _launch_plex_on(hass: HomeAssistant, player: str, platform: str | None) -> None:
     """Ask a TV to open its Plex app. Samsung: select the Plex source. Android TV: start the Plex activity."""
     state = hass.states.get(player)
@@ -99,7 +117,15 @@ async def _launch_plex_on(hass: HomeAssistant, player: str, platform: str | None
         if plex_source and (state is None or str(state.attributes.get("source", "")).lower() != str(plex_source).lower()):
             await hass.services.async_call("media_player", "select_source", {"entity_id": player, "source": plex_source}, blocking=True)
         return
-    if platform == "androidtv_remote":
+    if platform in ("androidtv_remote", "androidtv"):
+        # a Google TV box rejects "open this app" from the Android TV Remote since a Play Store change; its Android
+        # Debug Bridge can open it (the TV launcher entry, as a person would)
+        bridge = player if platform == "androidtv" else _same_box(hass, player, "androidtv")
+        if bridge:
+            await hass.services.async_call("androidtv", "adb_command", {"entity_id": bridge, "command": "input keyevent KEYCODE_WAKEUP"}, blocking=True)
+            await hass.services.async_call("androidtv", "adb_command", {
+                "entity_id": bridge, "command": "monkey -p com.plexapp.android -c android.intent.category.LEANBACK_LAUNCHER 1"}, blocking=True)
+            return
         ent = er.async_get(hass).async_get(player)
         remote = None
         if ent and ent.device_id:
@@ -145,7 +171,7 @@ async def _play(call: ServiceCall) -> None:
     hass = call.hass
     coordinator = coordinator_for(hass)
     if coordinator is None:
-        raise HomeAssistantError("Plex Picks is not set up")
+        raise ServiceValidationError("Plex Picks is not loaded")
     rating_key = str(call.data[ATTR_RATING_KEY])
     player = str(call.data[ATTR_PLAYER])
     media_type = str(call.data.get(ATTR_MEDIA_TYPE) or "movie")
@@ -155,6 +181,8 @@ async def _play(call: ServiceCall) -> None:
         raise HomeAssistantError("The Plex server id is unknown; set the integration up again")
 
     platform = _platform(hass, player)
+    if platform not in ("plex", "cast") and (cast := _same_box(hass, player, "cast")):
+        player, platform = cast, "cast"               # the same box's Cast device plays it without opening anything
     if platform in ("plex", "cast"):
         target = player
     else:

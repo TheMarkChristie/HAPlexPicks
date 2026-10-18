@@ -13,6 +13,8 @@ views:
           - because
           - picked
           - again
+          - shortlist      # any other Shortlist row, whatever it has been renamed to
           - recent
-        players:
-          - media_player.77_oled_tq77s85daexxc
+        libraries:
+          - Movies
+          - TV Shows

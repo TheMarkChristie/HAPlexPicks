@@ -136,3 +136,13 @@ def test_people_payload_and_summary():
     assert p["rows"][0]["items"][0]["title"] == "Matchbox the Movie"
     s = m.summarise(rows)
     assert s[0] == {"id": "c1", "kind": "picked", "title": "P", "library": None, "slug": "mark", "count": 2}
+
+
+def test_recent_row_keeps_only_films_and_tv():
+    """The server-wide recently added list also has music (Mark's Audiobooks library): a TV row cannot play it."""
+    md = [{"ratingKey": "9", "type": "album", "title": "An Audiobook", "parentTitle": "Author"},
+          {"ratingKey": "10", "type": "track", "title": "Chapter 1"},
+          movie(rk="11", title="A Film")]
+    row = m.recent_row(md, limit=10)
+    assert [i.title for i in row.items] == ["A Film"]
+

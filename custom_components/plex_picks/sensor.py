@@ -3,7 +3,6 @@
 States are counts; attributes stay small (one line per row). The card reads the full lists over the websocket."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
@@ -62,8 +61,8 @@ class _Base(CoordinatorEntity[PlexPicksCoordinator], SensorEntity):
         return list(self.coordinator.rows)
 
     def _common(self) -> dict[str, Any]:
-        gen = (self.coordinator.data or {}).get("generated_at")
-        return {"server": self.coordinator.server.get("name"), "updated": datetime.fromtimestamp(gen, timezone.utc).isoformat() if gen else None}
+        # no "updated" time: it changed on every poll and made each sensor write a new state when nothing else did
+        return {"server": self.coordinator.server.get("name")}
 
 
 class PicksSensor(_Base):

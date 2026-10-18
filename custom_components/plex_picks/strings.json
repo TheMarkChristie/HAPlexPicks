@@ -46,9 +46,9 @@
           "shortlist_token": "Shortlist API token"
         },
         "data_description": {
-          "players": "Plex clients, Cast devices, Samsung or Android TVs. A Samsung or Android TV is told to open Plex first.",
+          "players": "Leave empty to offer the house's Google Cast devices; the card asks which one each time. Plex clients, Samsung or Android TVs can be listed instead.",
           "plex_player_for": "One line per TV when the Plex client that appears for it should be named: media_player.tv = media_player.plex_tv",
-          "shortlist_url": "Optional, for the last-run sensor: where Shortlist's web interface is, for example http://local-shortlist:5959",
+          "shortlist_url": "Optional, for the last-run sensor: where Shortlist's web interface is, for example http://<repository id>-shortlist:5959 (the hostname on the add-on's Info page)",
           "shortlist_token": "Optional: Shortlist's owner API token from its Settings"
         }
       }

@@ -1,15 +1,21 @@
 /*
- * Plex Picks card: Shortlist's recommendation rows from Plex, Netflix-style, with a Play button for the TVs.
+ * Plex Picks card: Shortlist's recommendation rows from Plex, Netflix-style, with Play on a TV.
  *
  *   type: custom:plex-picks-card
- *   rows: [continue, because, picked, again, recent]   # which rows (kinds or row ids); default: every row
+ *   rows: [continue, because, picked, again, shortlist, recent]   # which rows (kinds or row ids); default: every row
  *   slug: themarkchristie                              # whose Shortlist rows; default: everyone's
  *   libraries: [Movies, TV Shows]                      # only rows for these libraries; default: all
  *   compact: false                                     # true: one row, smaller posters, for a Home dashboard section
  *   max_items: 40                                      # per row
- *   players: [media_player.tv]                         # override the integration's Play targets
+ *   players: [media_player.tv]                         # the TVs offered on Play; default: the integration's list
+ *                                                      #   (its options, else the house's Google Cast devices)
  *   title: ""                                          # a heading above the rows; none by default
  *   merge_libraries: true                              # one films row and one shows row per kind, whatever the libraries; false keeps Plex's per-library rows
+ *
+ * The card subscribes to plex_picks/subscribe while it is on screen (any signed-in user) and reads plex_picks/data
+ * when the rows change, so it keeps refreshing after the dashboard moves it between views. It keeps one ha-card and
+ * redraws only the rows, and only when they changed, so an open detail sheet, the scroll position of each row and the
+ * keyboard focus survive a refresh. The detail sheet is a native modal dialog.
  *
  * The integration serves this file and registers it as a dashboard resource; nothing to install.
  * Copyright (c) 2026 Mark Christie. MIT licence.
@@ -20,10 +26,12 @@
       continue: "Continue watching", recent: "New on the server", notSetUp: "Plex Picks is not set up yet. Add the integration under Settings > Devices & services.",
       noRows: "No rows yet. Shortlist builds them on its first run; this card fills in once they exist.",
       noMatch: "No rows match this card's filters.", loading: "Loading your picks", watched: (p) => `${p}% watched`,
+      waiting: "Waiting for Plex. The rows appear once the first read is done.", stale: "Could not refresh; showing the last rows.",
       playOn: "Play on", openPlex: "Open in Plex", close: "Close", because: "Because you watched", resume: "Resume",
       sending: (tv) => `Sending to ${tv}…`, sent: (tv) => `Playing on ${tv}`, failed: "Could not play", min: "min", h: "h",
       cast: "Cast", director: "Director", directors: "Directors", episodes: (n, t) => `${n} of ${t} episodes watched`,
-      noPlayers: "No TVs configured. Add players in the integration's options.", lib: "Library",
+      noPlayers: "No TVs found. Plex Picks offers the house's Google Cast devices, or the players in its options.", lib: "Library",
+      unavailable: "unavailable",
       pickedFilms: "Films picked for you", pickedShows: "Shows picked for you", againFilms: "Films to watch again", againShows: "Shows to watch again",
       popularFilms: "Popular films on the server", popularShows: "Popular shows on the server",
     },
@@ -31,10 +39,12 @@
       continue: "Fortsett å se", recent: "Nytt på serveren", notSetUp: "Plex Picks er ikke satt opp ennå. Legg til integrasjonen under Innstillinger > Enheter og tjenester.",
       noRows: "Ingen rader ennå. Shortlist lager dem ved første kjøring; kortet fylles når de finnes.",
       noMatch: "Ingen rader passer kortets filtre.", loading: "Henter forslag", watched: (p) => `${p} % sett`,
+      waiting: "Venter på Plex. Radene kommer når den første lesingen er ferdig.", stale: "Kunne ikke oppdatere; viser de siste radene.",
       playOn: "Spill på", openPlex: "Åpne i Plex", close: "Lukk", because: "Fordi du så", resume: "Fortsett",
       sending: (tv) => `Sender til ${tv}…`, sent: (tv) => `Spiller på ${tv}`, failed: "Kunne ikke spille", min: "min", h: "t",
       cast: "Skuespillere", director: "Regi", directors: "Regi", episodes: (n, t) => `${n} av ${t} episoder sett`,
-      noPlayers: "Ingen TV-er er satt opp. Legg til spillere i integrasjonens valg.", lib: "Bibliotek",
+      noPlayers: "Fant ingen TV-er. Plex Picks tilbyr husets Google Cast-enheter, eller spillerne i valgene.", lib: "Bibliotek",
+      unavailable: "utilgjengelig",
       pickedFilms: "Filmer valgt for deg", pickedShows: "Serier valgt for deg", againFilms: "Filmer å se igjen", againShows: "Serier å se igjen",
       popularFilms: "Populære filmer på serveren", popularShows: "Populære serier på serveren",
     },
@@ -47,14 +57,16 @@
     ha-card { display: block; padding: 6px 0 10px; overflow: hidden; }
     .title { font-size: 1.3em; font-weight: 500; margin: 10px 16px 2px; color: var(--primary-text-color); }
     .msg { padding: 18px 16px; color: var(--secondary-text-color); line-height: 1.45; }
+    .notice { padding: 6px 16px 0; font-size: 0.8em; color: var(--secondary-text-color); }
     .row { margin: 6px 0 2px; }
     .rowhead { display: flex; align-items: baseline; gap: 10px; padding: 8px 16px 6px; }
     .rowhead h3 { margin: 0; font-size: 1.05em; font-weight: 600; color: var(--primary-text-color); letter-spacing: 0.01em; }
     .pill { font-size: 0.72em; padding: 2px 8px; border-radius: 999px; background: var(--secondary-background-color, rgba(127,127,127,0.18)); color: var(--secondary-text-color); white-space: nowrap; }
     .count { margin-left: auto; font-size: 0.78em; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
-    .scroller { display: flex; gap: var(--pp-gap); overflow-x: auto; overflow-y: hidden; padding: 4px 16px 12px; scroll-snap-type: x proximity; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+    .scroller { display: flex; gap: var(--pp-gap); overflow-x: auto; overflow-y: hidden; padding: 4px 16px 12px; scroll-snap-type: x proximity; scrollbar-width: thin; -webkit-overflow-scrolling: touch; margin: 0; list-style: none; }
     .scroller::-webkit-scrollbar { height: 6px; } .scroller::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.35); border-radius: 3px; }
-    .tile { flex: 0 0 var(--pp-poster-w); width: var(--pp-poster-w); scroll-snap-align: start; background: none; border: 0; padding: 0; margin: 0; text-align: left; cursor: pointer; color: inherit; font: inherit; border-radius: var(--pp-radius); }
+    .cell { flex: 0 0 var(--pp-poster-w); width: var(--pp-poster-w); scroll-snap-align: start; }
+    .tile { display: block; width: 100%; background: none; border: 0; padding: 0; margin: 0; text-align: left; cursor: pointer; color: inherit; font: inherit; border-radius: var(--pp-radius); }
     .tile:focus-visible { outline: 3px solid var(--primary-color); outline-offset: 3px; }
     .poster { position: relative; width: 100%; aspect-ratio: 2 / 3; border-radius: var(--pp-radius); overflow: hidden; background: var(--secondary-background-color, #2a2a2a); box-shadow: 0 2px 10px rgba(0,0,0,0.25); transition: transform 160ms ease, box-shadow 160ms ease; }
     .tile:hover .poster, .tile:focus-visible .poster { transform: translateY(-3px) scale(1.03); box-shadow: 0 8px 22px rgba(0,0,0,0.35); }
@@ -69,8 +81,9 @@
     :host([compact]) .cap .m { display: none; }
     @media (prefers-reduced-motion: reduce) { .poster, .tile:hover .poster { transition: none; transform: none; } }
 
-    .overlay { position: fixed; inset: 0; z-index: 9; background: rgba(0,0,0,0.6); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 16px; }
-    .sheet { position: relative; width: min(820px, 100%); max-height: min(92vh, 900px); overflow: auto; border-radius: 16px; background: var(--card-background-color, #1e1e1e); color: var(--primary-text-color); box-shadow: 0 20px 60px rgba(0,0,0,0.5); outline: none; }
+    dialog.sheet { padding: 0; border: 0; width: min(820px, calc(100vw - 32px)); max-width: none; max-height: min(92vh, 900px); overflow: auto; border-radius: 16px; background: var(--card-background-color, #1e1e1e); color: var(--primary-text-color); box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+    dialog.sheet::backdrop { background: rgba(0,0,0,0.6); backdrop-filter: blur(6px); }
+    dialog.sheet:focus-visible { outline: none; }
     .hero { position: relative; aspect-ratio: 16 / 9; max-height: 46vh; background-size: cover; background-position: center top; }
     .hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.05) 30%, var(--card-background-color, #1e1e1e) 100%); }
     .hero .close { position: absolute; top: 10px; right: 10px; z-index: 1; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(0,0,0,0.55); color: #fff; font-size: 22px; line-height: 40px; text-align: center; cursor: pointer; }
@@ -89,53 +102,84 @@
     .people b { color: var(--primary-text-color); font-weight: 600; }
     .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
     .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px; border: 0; cursor: pointer; font: inherit; font-weight: 600; background: var(--primary-color, #e5a00d); color: var(--text-primary-color, #fff); }
+    .btn svg { width: 16px; height: 16px; flex: 0 0 16px; }
     .btn.secondary { background: var(--secondary-background-color, rgba(127,127,127,0.2)); color: var(--primary-text-color); text-decoration: none; }
     .btn:focus-visible { outline: 3px solid var(--primary-text-color); outline-offset: 2px; }
     .btn[disabled] { opacity: 0.6; cursor: default; }
     .status { width: 100%; font-size: 0.88em; color: var(--secondary-text-color); min-height: 1.2em; }
     .status.err { color: var(--error-color, #db4437); }
-    @media (max-width: 600px) { .overlay { padding: 0; align-items: flex-end; } .sheet { border-radius: 16px 16px 0 0; max-height: 96vh; } .body { padding: 0 16px 18px; } .body h2 { font-size: 1.35em; } }
+    @media (max-width: 600px) { dialog.sheet { width: 100vw; max-height: 96vh; margin: auto 0 0 0; border-radius: 16px 16px 0 0; } .body { padding: 0 16px 18px; } .body h2 { font-size: 1.35em; } }
   `;
 
+  const PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
   const DEFAULTS = { rows: null, exclude: [], slug: null, libraries: null, compact: false, max_items: 40, players: null, title: "", merge_libraries: true };
   const MERGEABLE = ["picked", "again", "because", "popular", "seasonal", "shortlist"];
+  const RELOAD_MS = 6 * 3600 * 1000;           // fresh signed image addresses well before they expire (12 h)
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   class PlexPicksCard extends HTMLElement {
-    static getStubConfig() { return { rows: ["continue", "because", "picked", "again", "recent"] }; }
+    static getStubConfig() { return { rows: ["continue", "because", "picked", "again", "shortlist", "recent"] }; }
 
     constructor() {
       super();
       this.attachShadow({ mode: "open" });
       this._config = { ...DEFAULTS };
       this._data = null;
-      this._error = null;
+      this._error = null;          // "notSetUp" | "waiting" | null
+      this._notice = "";
       this._loading = false;
-      this._lastFocus = null;
+      this._loadedAt = 0;
+      this._sub = null;            // the subscribe promise (resolves to the unsubscribe function)
+      this._timer = null;
+      this._retry = null;
+      this._sheet = null;
     }
 
     setConfig(config) {
       if (config && config.rows && !Array.isArray(config.rows)) throw new Error("rows must be a list");
       this._config = { ...DEFAULTS, ...(config || {}) };
       if (this._config.compact) this.setAttribute("compact", ""); else this.removeAttribute("compact");
+      if (this._hass && this.isConnected) this._load(true);
       this._render();
     }
 
     set hass(hass) {
       const first = !this._hass;
       this._hass = hass;
-      if (first) { this._load(); this._subscribe(); }
+      if (first && this.isConnected) this._start();
     }
 
     get hass() { return this._hass; }
 
     getCardSize() { return this._config.compact ? 4 : 12; }
 
-    connectedCallback() { this._render(); if (this._hass && !this._data && !this._loading) this._load(); }
+    connectedCallback() {
+      this._render();
+      if (this._hass) this._start();
+    }
 
-    disconnectedCallback() {
-      if (this._unsub) { this._unsub().catch(() => {}); this._unsub = null; }
+    disconnectedCallback() { this._stop(); }
+
+    /* on screen: listen for changes, refresh the signed image addresses now and then, and read now if the last read
+       is old (the rows may have changed while the card was off screen) */
+    _start() {
+      if (!this._sub && this._hass && this._hass.connection) {
+        const sub = this._hass.connection.subscribeMessage((ev) => {
+          if (!this._data || !ev || ev.version !== this._data.version) this._load();
+        }, { type: "plex_picks/subscribe" });
+        this._sub = sub;
+        sub.catch(() => { if (this._sub === sub) this._sub = null; });
+      }
+      if (!this._timer) this._timer = setInterval(() => this._load(true), RELOAD_MS);
+      if (!this._data || Date.now() - this._loadedAt > 5 * 60 * 1000) this._load();
+    }
+
+    _stop() {
+      const sub = this._sub;
+      this._sub = null;
+      if (sub) sub.then((unsub) => unsub()).catch(() => {});
       if (this._timer) { clearInterval(this._timer); this._timer = null; }
+      if (this._retry) { clearTimeout(this._retry); this._retry = null; }
     }
 
     _t(key, ...args) {
@@ -145,24 +189,40 @@
       return typeof v === "function" ? v(...args) : v;
     }
 
-    async _load() {
+    _query() {
+      const q = { type: "plex_picks/data", art: !this._config.compact };
+      if (Array.isArray(this._config.rows) && this._config.rows.length) q.rows = this._config.rows.map(String);
+      if (this._config.slug) q.slug = String(this._config.slug);
+      if (Array.isArray(this._config.libraries) && this._config.libraries.length) q.libraries = this._config.libraries.map(String);
+      if (this._config.max_items) q.max_items = Math.max(1, Math.min(200, Number(this._config.max_items) || 40));
+      return q;
+    }
+
+    async _load(force) {
       if (!this._hass || this._loading) return;
       this._loading = true;
       try {
-        this._data = await this._hass.callWS({ type: "plex_picks/data", art: !this._config.compact });
+        const data = await this._hass.callWS(this._query());
+        const same = !force && this._data && data.version && data.version === this._data.version;
+        const players = this._data && JSON.stringify(this._data.players) === JSON.stringify(data.players);
+        this._data = data;
+        this._loadedAt = Date.now();
+        const hadProblem = this._error || this._notice;
         this._error = null;
+        this._notice = "";
+        if (!same || !players || hadProblem) this._render();
       } catch (e) {
-        this._error = e;
+        const code = e && (e.code || (e.error && e.error.code));
+        if (code === "unknown_command") this._error = "notSetUp";
+        else if (!this._data) this._error = "waiting";
+        else this._notice = this._t("stale");
+        if (code !== "unknown_command" && !this._retry) {
+          this._retry = setTimeout(() => { this._retry = null; this._load(); }, 30000);
+        }
+        this._render();
       } finally {
         this._loading = false;
-        this._render();
       }
-    }
-
-    _subscribe() {
-      if (!this._hass || this._unsub || !this._hass.connection) return;
-      this._hass.connection.subscribeEvents(() => this._load(), "plex_picks_updated").then((u) => { this._unsub = u; }).catch(() => {});
-      this._timer = setInterval(() => this._load(), 10 * 60 * 1000);
     }
 
     _rows() {
@@ -217,7 +277,10 @@
     _players() {
       const ids = this._config.players;
       if (ids && ids.length) {
-        return ids.map((id) => { const s = this._hass && this._hass.states[id]; return { entity_id: id, name: s ? (s.attributes.friendly_name || id) : id }; });
+        return ids.map((id) => {
+          const s = this._hass && this._hass.states[id];
+          return { entity_id: id, name: s ? (s.attributes.friendly_name || id) : id, available: !!s && s.state !== "unavailable" };
+        });
       }
       return (this._data && this._data.players) || [];
     }
@@ -225,6 +288,7 @@
     _rowTitle(row) {
       if (row.kind === "continue") return this._t("continue");
       if (row.kind === "recent") return this._t("recent");
+      if (row.kind === "because" && row.seed) return `${this._t("because")} ${row.seed}`;
       if (row.merged) {
         const films = row.library_type === "movie";
         if (row.kind === "picked") return this._t(films ? "pickedFilms" : "pickedShows");
@@ -234,12 +298,34 @@
       return row.title;
     }
 
-    _render() {
+    /* the card's frame is made once; later renders replace only the content, keeping each row's scroll position and
+       the focused tile, so a refresh does not move anything under the user's finger */
+    _shell() {
       const root = this.shadowRoot;
-      if (!root) return;
+      let content = root.querySelector(".content");
+      if (!content) {
+        root.innerHTML = `<style>${CSS}</style><ha-card><div class="content"></div></ha-card>`;
+        content = root.querySelector(".content");
+        content.addEventListener("click", (ev) => {
+          const tile = ev.target.closest && ev.target.closest(".tile");
+          if (tile) this._open(tile.dataset.row, tile.dataset.key, tile);
+        });
+        content.addEventListener("keydown", (ev) => {
+          const sc = ev.target.closest && ev.target.closest(".scroller");
+          if (sc) this._arrows(ev, sc);
+        });
+      }
+      return content;
+    }
+
+    _render() {
+      if (!this.shadowRoot) return;
+      const content = this._shell();
       let body;
-      if (this._error) {
+      if (this._error === "notSetUp") {
         body = `<div class="msg">${esc(this._t("notSetUp"))}</div>`;
+      } else if (this._error === "waiting") {
+        body = `<div class="msg" aria-busy="true">${esc(this._t("waiting"))}</div>`;
       } else if (!this._data) {
         body = `<div class="msg" aria-busy="true">${esc(this._t("loading"))}…</div>`;
       } else {
@@ -249,11 +335,19 @@
         else body = rows.map((r) => this._renderRow(r)).join("");
       }
       const title = this._config.title ? `<div class="title">${esc(this._config.title)}</div>` : "";
-      root.innerHTML = `<style>${CSS}</style><ha-card>${title}${body}</ha-card>`;
-      root.querySelectorAll(".tile").forEach((el) => {
-        el.addEventListener("click", () => this._open(el.dataset.row, el.dataset.key, el));
+      const notice = this._notice ? `<div class="notice" role="status">${esc(this._notice)}</div>` : "";
+      const scroll = {};
+      content.querySelectorAll(".row").forEach((sec) => { scroll[sec.dataset.row] = sec.querySelector(".scroller").scrollLeft; });
+      const active = this.shadowRoot.activeElement;
+      const focus = active && active.classList && active.classList.contains("tile") ? [active.dataset.row, active.dataset.key] : null;
+      content.innerHTML = `${title}${notice}${body}`;
+      content.querySelectorAll(".row").forEach((sec) => {
+        if (scroll[sec.dataset.row]) sec.querySelector(".scroller").scrollLeft = scroll[sec.dataset.row];
       });
-      root.querySelectorAll(".scroller").forEach((sc) => sc.addEventListener("keydown", (ev) => this._arrows(ev, sc)));
+      if (focus) {
+        const again = [...content.querySelectorAll(".tile")].find((t) => t.dataset.row === focus[0] && t.dataset.key === focus[1]);
+        if (again) again.focus({ preventScroll: true });
+      }
     }
 
     _renderRow(row) {
@@ -261,7 +355,7 @@
       const showLib = row.library && ["picked", "again", "popular", "seasonal", "shortlist"].includes(row.kind);
       const head = `<div class="rowhead"><h3>${esc(this._rowTitle(row))}</h3>${showLib ? `<span class="pill">${esc(row.library)}</span>` : ""}<span class="count">${items.length}</span></div>`;
       const tiles = items.map((it) => this._renderTile(row, it)).join("");
-      return `<section class="row" aria-label="${esc(this._rowTitle(row))}">${head}<div class="scroller" role="list">${tiles}</div></section>`;
+      return `<section class="row" data-row="${esc(row.id)}" aria-label="${esc(this._rowTitle(row))}">${head}<div class="scroller" role="list">${tiles}</div></section>`;
     }
 
     _renderTile(row, it) {
@@ -272,10 +366,10 @@
       const img = it.thumb
         ? `<img src="${esc(it.thumb)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="ph" style="display:none">${esc(it.title)}</div>`
         : `<div class="ph">${esc(it.title)}</div>`;
-      return `<button class="tile" role="listitem" data-row="${esc(row.id)}" data-key="${esc(it.rating_key)}" aria-label="${esc(label)}">
+      return `<div class="cell" role="listitem"><button class="tile" data-row="${esc(row.id)}" data-key="${esc(it.rating_key)}" aria-label="${esc(label)}">
         <div class="poster">${img}${badge ? `<span class="badge">${badge}</span>` : ""}${pct != null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}</div>
         <div class="cap"><div class="t">${esc(it.title)}</div>${meta ? `<div class="m">${esc(meta)}</div>` : ""}</div>
-      </button>`;
+      </button></div>`;
     }
 
     _arrows(ev, scroller) {
@@ -301,10 +395,12 @@
       return m >= 60 ? `${Math.floor(m / 60)} ${this._t("h")} ${m % 60} ${this._t("min")}` : `${m} ${this._t("min")}`;
     }
 
-    _open(rowId, key, fromEl) {
+    /* the detail sheet: a native modal dialog in the top layer, outside the rows, so a refresh does not close it;
+       the page behind is inert, Escape closes it, and focus goes back to the tile */
+    _open(rowId, key) {
       const { row, item } = this._find(rowId, key);
       if (!item) return;
-      this._lastFocus = fromEl || null;
+      if (this._sheet) this._sheet.close();
       const players = this._players();
       const server = (this._data && this._data.server) || {};
       const c = item.colors || {};
@@ -323,13 +419,16 @@
         item.cast && item.cast.length ? `<b>${esc(this._t("cast"))}:</b> ${esc(item.cast.join(", "))}` : "",
       ].filter(Boolean).join("<br>");
       const buttons = players.length
-        ? players.map((p) => `<button class="btn play" data-player="${esc(p.entity_id)}" data-name="${esc(p.name)}">▶ ${esc(this._t("playOn"))} ${esc(p.name)}</button>`).join("")
+        ? players.map((p) => {
+            const off = p.available === false;
+            return `<button class="btn play" data-player="${esc(p.entity_id)}" data-name="${esc(p.name)}"${off ? " disabled" : ""}>${PLAY_ICON}${esc(this._t("playOn"))} ${esc(p.name)}${off ? ` (${esc(this._t("unavailable"))})` : ""}</button>`;
+          }).join("")
         : `<span class="status">${esc(this._t("noPlayers"))}</span>`;
       const plexUrl = server.id ? `https://app.plex.tv/desktop/#!/server/${esc(server.id)}/details?key=%2Flibrary%2Fmetadata%2F${esc(item.rating_key)}` : "https://app.plex.tv/";
-      const overlay = document.createElement("div");
-      overlay.className = "overlay";
-      overlay.innerHTML = `
-        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pp-title" tabindex="-1">
+      const dialog = document.createElement("dialog");
+      dialog.className = "sheet";
+      dialog.setAttribute("aria-labelledby", "pp-title");
+      dialog.innerHTML = `
           <div class="hero" style="${heroStyle}"><button class="close" aria-label="${esc(this._t("close"))}">×</button></div>
           <div class="body">
             <h2 id="pp-title">${esc(item.title)}</h2>
@@ -341,26 +440,26 @@
             ${item.summary ? `<p class="summary">${esc(item.summary)}</p>` : ""}
             ${people ? `<p class="people">${people}</p>` : ""}
             <div class="actions">${buttons}<a class="btn secondary" href="${plexUrl}" target="_blank" rel="noopener">${esc(this._t("openPlex"))}</a><div class="status" aria-live="polite"></div></div>
-          </div>
-        </div>`;
-      const close = () => {
-        overlay.remove();
-        document.removeEventListener("keydown", onKey);
-        if (this._lastFocus) this._lastFocus.focus();
-      };
-      const onKey = (ev) => { if (ev.key === "Escape") close(); };
-      overlay.addEventListener("click", (ev) => { if (ev.target === overlay) close(); });
-      overlay.querySelector(".close").addEventListener("click", close);
-      document.addEventListener("keydown", onKey);
-      overlay.querySelectorAll(".play").forEach((b) => b.addEventListener("click", () => this._play(item, b, overlay)));
-      this.shadowRoot.appendChild(overlay);
-      overlay.querySelector(".sheet").focus();
+          </div>`;
+      dialog.addEventListener("click", (ev) => { if (ev.target === dialog) dialog.close(); });   // the backdrop
+      dialog.querySelector(".close").addEventListener("click", () => dialog.close());
+      dialog.querySelectorAll(".play").forEach((b) => b.addEventListener("click", () => this._play(item, b, dialog)));
+      dialog.addEventListener("close", () => {
+        dialog.remove();
+        if (this._sheet === dialog) this._sheet = null;
+        const tile = [...this.shadowRoot.querySelectorAll(".tile")].find((t) => t.dataset.row === rowId && t.dataset.key === String(key));
+        if (tile) tile.focus({ preventScroll: true });
+      });
+      this.shadowRoot.appendChild(dialog);
+      this._sheet = dialog;
+      dialog.showModal();
     }
 
-    async _play(item, button, overlay) {
-      const status = overlay.querySelector(".status");
+    async _play(item, button, dialog) {
+      const status = dialog.querySelector(".status");
       const name = button.dataset.name;
-      const buttons = overlay.querySelectorAll(".play");
+      const buttons = dialog.querySelectorAll(".play");
+      const wasDisabled = [...buttons].map((b) => b.disabled);
       buttons.forEach((b) => (b.disabled = true));
       status.className = "status";
       status.textContent = this._t("sending", name);
@@ -377,7 +476,7 @@
         status.className = "status err";
         status.textContent = `${this._t("failed")}: ${(e && (e.message || e.error)) || e}`;
       } finally {
-        buttons.forEach((b) => (b.disabled = false));
+        buttons.forEach((b, i) => (b.disabled = wasDisabled[i]));
       }
     }
   }

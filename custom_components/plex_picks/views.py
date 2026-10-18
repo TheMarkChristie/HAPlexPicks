@@ -3,14 +3,14 @@
 Requires a signed-in Home Assistant user (or a signed path from the websocket payload), fetches the transcoded
 image from Plex with the server-side token, and lets the browser cache it for a day.
 
-Plex is asked gently: at most four image fetches at a time, and every image is kept in memory for a day (up to
-600 of them, about 5 MB of posters), so a dashboard opening fifty posters does not become fifty Plex requests on
-every visit. Signed URLs change per websocket read, so browser caching alone would not do this."""
+Plex is asked gently: the client's limiter spaces every request, every image is kept in memory for a day (up to 600
+of them or 40 MB, whichever comes first), only the three sizes the card uses are served, and after three failures in
+a row Plex is left alone for two minutes (a failed image is not asked again for a minute), so a struggling server is
+not hammered by every poster on the screen. Only images are passed on, with headers that stop a browser treating the
+answer as anything else."""
 from __future__ import annotations
 
-import asyncio
 import logging
-import re
 import time
 from collections import OrderedDict
 
@@ -18,19 +18,23 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .const import IMAGE_KINDS, IMAGE_URL
+from .const import IMAGE_KINDS, IMAGE_SIZES, IMAGE_URL
 from .plex_api import PlexError
 
 _LOGGER = logging.getLogger(__name__)
-_SIZE = re.compile(r"^(\d{2,4})x(\d{2,4})$")
 CACHE_MAX = 600
+CACHE_MAX_BYTES = 40 * 1024 * 1024
 CACHE_TTL = 86400
-CONCURRENT_FETCHES = 4
+FAILURES_TO_PAUSE = 3
+PAUSE_SECONDS = 120
+FAILED_KEY_SECONDS = 60
+SAFE = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'"}
 
 
 class _ImageCache:
     def __init__(self) -> None:
         self._items: OrderedDict[tuple, tuple[float, bytes, str]] = OrderedDict()
+        self._bytes = 0
 
     def get(self, key: tuple) -> tuple[bytes, str] | None:
         hit = self._items.get(key)
@@ -38,16 +42,22 @@ class _ImageCache:
             return None
         ts, body, ctype = hit
         if time.monotonic() - ts > CACHE_TTL:
-            self._items.pop(key, None)
+            self._drop(key)
             return None
         self._items.move_to_end(key)
         return body, ctype
 
+    def _drop(self, key: tuple) -> None:
+        old = self._items.pop(key, None)
+        if old:
+            self._bytes -= len(old[1])
+
     def put(self, key: tuple, body: bytes, ctype: str) -> None:
+        self._drop(key)
         self._items[key] = (time.monotonic(), body, ctype)
-        self._items.move_to_end(key)
-        while len(self._items) > CACHE_MAX:
-            self._items.popitem(last=False)
+        self._bytes += len(body)
+        while self._items and (len(self._items) > CACHE_MAX or self._bytes > CACHE_MAX_BYTES):
+            self._drop(next(iter(self._items)))
 
 
 class PlexPicksImageView(HomeAssistantView):
@@ -58,39 +68,53 @@ class PlexPicksImageView(HomeAssistantView):
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
         self._cache = _ImageCache()
-        self._sem = asyncio.Semaphore(CONCURRENT_FETCHES)
+        self._failures = 0
+        self._paused_until = 0.0
+        self._failed: dict[tuple, float] = {}
+
+    def _refuse(self, status: int, text: str, retry: int | None = None) -> web.Response:
+        headers = {"Cache-Control": "no-store", **SAFE}
+        if retry:
+            headers["Retry-After"] = str(retry)
+        return web.Response(status=status, text=text, headers=headers)
 
     async def get(self, request: web.Request, kind: str, rating_key: str, size: str) -> web.Response:
         from . import coordinator_for  # noqa: PLC0415
 
-        if kind not in IMAGE_KINDS or not rating_key.isdigit():
-            return web.Response(status=400, text="bad request")
-        m = _SIZE.match(size)
-        if not m:
-            return web.Response(status=400, text="bad size")
-        width, height = min(int(m.group(1)), 2000), min(int(m.group(2)), 2000)
-        etag = f'"{kind}-{rating_key}-{width}x{height}"'
+        if kind not in IMAGE_KINDS or not rating_key.isdigit() or size not in IMAGE_SIZES:
+            return self._refuse(400, "bad request")
+        width, height = (int(x) for x in size.split("x"))
+        etag = f'"{kind}-{rating_key}-{size}"'
         if request.headers.get("If-None-Match") == etag:
-            return web.Response(status=304, headers={"ETag": etag, "Cache-Control": "private, max-age=86400"})
+            return web.Response(status=304, headers={"ETag": etag, "Cache-Control": "private, max-age=86400", **SAFE})
 
         key = (kind, rating_key, width, height)
         hit = self._cache.get(key)
         if hit is None:
             coordinator = coordinator_for(self.hass)
             if coordinator is None:
-                return web.Response(status=503, text="Plex Picks is not set up")
-            async with self._sem:
-                hit = self._cache.get(key)  # another request may have fetched it while we waited
-                if hit is None:
-                    try:
-                        body, content_type = await coordinator.client.image(rating_key, kind, width, height)
-                    except PlexError as err:
-                        _LOGGER.debug("Image %s/%s failed: %s", kind, rating_key, err)
-                        return web.Response(status=502 if err.status else 504, text="Plex did not answer",
-                                            headers={"Cache-Control": "no-store"})
-                    content_type = content_type.split(";")[0].strip() or "image/jpeg"
-                    self._cache.put(key, body, content_type)
-                    hit = (body, content_type)
+                return self._refuse(503, "Plex Picks is not set up")
+            now = time.monotonic()
+            if now < self._paused_until:
+                return self._refuse(503, "Plex is not answering; trying again shortly", PAUSE_SECONDS)
+            if now - self._failed.get(key, -1e9) < FAILED_KEY_SECONDS:
+                return self._refuse(502, "Plex did not answer for this image")
+            try:
+                body, content_type = await coordinator.client.image(rating_key, kind, width, height)
+            except PlexError as err:
+                _LOGGER.debug("Image %s/%s failed: %s", kind, rating_key, err)
+                self._failures += 1
+                self._failed[key] = time.monotonic()
+                if len(self._failed) > 500:
+                    self._failed = {k: t for k, t in self._failed.items() if time.monotonic() - t < FAILED_KEY_SECONDS}
+                if self._failures >= FAILURES_TO_PAUSE:
+                    self._paused_until = time.monotonic() + PAUSE_SECONDS
+                    self._failures = 0
+                return self._refuse(502 if err.status else 504, "Plex did not answer")
+            self._failures = 0
+            self._failed.pop(key, None)
+            self._cache.put(key, body, content_type)
+            hit = (body, content_type)
         body, content_type = hit
         return web.Response(body=body, content_type=content_type,
-                            headers={"Cache-Control": "private, max-age=86400", "ETag": etag})
+                            headers={"Cache-Control": "private, max-age=86400", "ETag": etag, **SAFE})

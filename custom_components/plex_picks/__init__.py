@@ -1,8 +1,9 @@
 """Plex Picks: Shortlist's per-person recommendation rows, the owner's Continue Watching and what is new on the
 server, read from Plex and shown in Home Assistant as a Netflix-style card, with a Play button for the TVs.
 
-The integration serves its own card, proxies posters so the Plex token never reaches a browser, and offers a
-websocket command the card reads and two services (refresh, play)."""
+The integration serves its own card, proxies posters so the Plex token never reaches a browser, and offers the
+websocket commands the card reads and two services (refresh, play). The services, the websocket commands and the
+image view are registered once, in async_setup, and look the loaded entry up per call."""
 from __future__ import annotations
 
 import hashlib
@@ -19,7 +20,7 @@ from homeassistant.loader import async_get_integration
 from .card_resource import async_remove_card_resource, async_schedule_card_resource
 from .const import CARD_FILE, DOMAIN, URL_BASE
 from .coordinator import PlexPicksCoordinator
-from .services import async_register_services, async_unregister_services
+from .services import async_register_services
 from .views import PlexPicksImageView
 from .websocket import async_register_websocket
 
@@ -48,11 +49,17 @@ async def _card_url(hass: HomeAssistant) -> str:
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Serve the card and put it in front of every dashboard; once per run."""
+    """Serve the card and put it in front of every dashboard; register the services, the websocket commands and the
+    image view. Once per run: views cannot be removed, so they are never registered twice."""
     if not hass.data.get(_STATIC_REGISTERED):
         await hass.http.async_register_static_paths(
             [StaticPathConfig(URL_BASE, str(Path(__file__).parent / "www"), cache_headers=False)])
         hass.data[_STATIC_REGISTERED] = True
+    if not hass.data.get(_API_REGISTERED):
+        hass.http.register_view(PlexPicksImageView(hass))
+        async_register_websocket(hass)
+        async_register_services(hass)
+        hass.data[_API_REGISTERED] = True
     url = await _card_url(hass)
     frontend.add_extra_js_url(hass, url)
     async_schedule_card_resource(hass, url)
@@ -80,11 +87,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = PlexPicksCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
-    if not hass.data.get(_API_REGISTERED):
-        hass.http.register_view(PlexPicksImageView(hass))
-        async_register_websocket(hass)
-        async_register_services(hass)
-        hass.data[_API_REGISTERED] = True
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_options_changed))
     return True
@@ -96,9 +98,8 @@ async def _async_options_changed(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if ok and not any(e.entry_id != entry.entry_id for e in hass.config_entries.async_entries(DOMAIN)):
-        async_unregister_services(hass)
-        hass.data.pop(_API_REGISTERED, None)
+    if ok:
+        entry.runtime_data = None          # the services and the card then say Plex Picks is not loaded
     return ok
 
 
