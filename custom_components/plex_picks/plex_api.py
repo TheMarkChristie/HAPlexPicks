@@ -80,8 +80,14 @@ class PlexClient:
             page = await self.get(path, **params, **{"X-Plex-Container-Start": start, "X-Plex-Container-Size": size})
             batch = page.get("Metadata", []) or []
             items.extend(batch)
-            total = int(page.get("totalSize") or page.get("size") or 0)
-            if not batch or len(items) >= total or (limit and len(items) >= limit):
+            if not batch or (limit and len(items) >= limit):
+                break
+            total = page.get("totalSize")
+            if total is not None:
+                if len(items) >= int(total):
+                    break
+            elif len(batch) < size:
+                # no total from the server: a short page is the last one
                 break
             start += size
         return items[:limit] if limit else items
