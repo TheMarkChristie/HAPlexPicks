@@ -44,6 +44,7 @@ MAX_INTERVAL = 720
 EVENT_UPDATED = f"{DOMAIN}_updated"            # fired when the rows changed, with their version
 WS_DATA = f"{DOMAIN}/data"
 WS_SUBSCRIBE = f"{DOMAIN}/subscribe"           # any signed-in user (subscribe_events refuses custom events to non-admins)
+WS_SHORTLIST = f"{DOMAIN}/shortlist"           # admins only: relay one /api/ request to Shortlist with the configured token
 
 # how hard Plex is asked: one request at a time a third of a second apart, short timeouts, the whole read bounded,
 # and each library's Shortlist label looked up once a day (Shortlist writes at most nightly)

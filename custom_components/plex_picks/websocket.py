@@ -19,7 +19,7 @@ from homeassistant.components.http.auth import async_sign_path
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
-from .const import BACKDROP, CONF_PLAYERS, DOMAIN, EVENT_UPDATED, IMAGE_URL, POSTER, SIGNED_URL_HOURS, WS_DATA, WS_SUBSCRIBE
+from .const import BACKDROP, CONF_PLAYERS, DOMAIN, EVENT_UPDATED, IMAGE_URL, POSTER, SIGNED_URL_HOURS, WS_DATA, WS_SHORTLIST, WS_SUBSCRIBE
 
 _SIGNED = f"{DOMAIN}_signed_urls"
 _SIGNED_MAX = 8000
@@ -80,6 +80,36 @@ def _wanted(row: dict[str, Any], kinds: set[str], slug: str | None, libraries: s
 def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_data)
     websocket_api.async_register_command(hass, ws_subscribe)
+    websocket_api.async_register_command(hass, ws_shortlist)
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): WS_SHORTLIST,
+    vol.Optional("method", default="GET"): vol.In(["GET", "POST", "PATCH", "PUT", "DELETE"]),
+    vol.Required("path"): str,
+    vol.Optional("body"): dict,
+    vol.Optional("params"): dict,
+})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_shortlist(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Relay one request to Shortlist's API with the configured owner token: admins only, /api/... paths only.
+    Shortlist lives on the home network, so this is how its rows, settings and runs are managed from outside."""
+    from . import coordinator_for  # noqa: PLC0415
+
+    coordinator = coordinator_for(hass)
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_ready", "Plex Picks is not set up")
+        return
+    path = str(msg["path"])
+    if not path.startswith("/api/") or ".." in path:
+        connection.send_error(msg["id"], "bad_path", "Only Shortlist /api/ paths are relayed")
+        return
+    result = await coordinator.shortlist_request(msg.get("method", "GET"), path, body=msg.get("body"), params=msg.get("params"))
+    if result.get("status", 0) >= 400 or result.get("status", 0) == 0:
+        connection.send_error(msg["id"], "shortlist_error", f"Shortlist {result.get('status')}: {str(result.get('body'))[:300]}")
+        return
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command({

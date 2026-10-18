@@ -159,6 +159,27 @@ class PlexPicksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             return {"_error": str(err)}
 
+    async def shortlist_request(self, method: str, path: str, body: dict[str, Any] | None = None,
+                                params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Any request to Shortlist's API with the owner token, for the admin relay: {status, body}."""
+        if not self._shortlist_configured():
+            return {"status": 0, "body": "Shortlist URL and token are not configured"}
+        url = str(self.options.get(CONF_SHORTLIST_URL) or "").rstrip("/")
+        token = str(self.options.get(CONF_SHORTLIST_TOKEN) or "").strip()
+        session = async_get_clientsession(self.hass)
+        try:
+            async with session.request(method.upper(), f"{url}{path}", json=body, params=params,
+                                       headers={"Authorization": f"Bearer {token}"},
+                                       timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                text = await resp.text()
+                try:
+                    parsed: Any = json.loads(text) if text else None
+                except ValueError:
+                    parsed = text
+                return {"status": resp.status, "body": parsed}
+        except (aiohttp.ClientError, TimeoutError) as err:
+            return {"status": 0, "body": str(err)}
+
     async def _read_shortlist(self) -> dict[str, Any]:
         """Shortlist's latest run, when its URL and owner API token are configured. Never fatal."""
         if not self._shortlist_configured():
