@@ -1,18 +1,28 @@
 refresh:
+  name: Refresh
+  description: Read the rows from Plex again now.
 
 play:
+  name: Play
+  description: Play a title on a TV through the Plex integration.
   fields:
     rating_key:
+      name: Rating key
+      description: The Plex rating key of the film, show or episode.
       required: true
       example: "1734361"
       selector:
         text:
     player:
+      name: Player
+      description: A Plex client, a Cast device, or a Samsung or Android TV (told to open Plex first).
       required: true
       selector:
         entity:
           domain: media_player
     media_type:
+      name: Media type
+      description: movie, show or episode.
       default: movie
       selector:
         select:
@@ -21,6 +31,8 @@ play:
             - show
             - episode
     resume:
+      name: Resume
+      description: Continue from where it was left.
       default: false
       selector:
         boolean:
