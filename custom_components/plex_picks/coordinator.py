@@ -21,7 +21,10 @@ from .const import (
     CONF_SHORTLIST_TOKEN, CONF_SHORTLIST_URL, CONF_TOKEN, CONF_URL, DEFAULT_INTERVAL, DEFAULT_RECENT_SIZE,
     DEFAULT_ROW_SIZE, EVENT_UPDATED, LABEL_CACHE_HOURS, LABEL_PLAIN, NAME, READ_BUDGET_SECONDS,
 )
-from .model import KIND_CONTINUE, KIND_RECENT, Row, continue_row, is_shortlist_collection, payload, recent_row, row_from_collection, sort_rows
+from .model import (
+    KIND_CONTINUE, KIND_RECENT, Row, apply_reasons, continue_row, is_shortlist_collection, payload, reasons_from_user_rows,
+    recent_row, row_from_collection, sort_rows,
+)
 from .plex_api import PlexAuthError, PlexClient, PlexError
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,6 +49,7 @@ class PlexPicksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         self.rows: list[Row] = []
         self.shortlist: dict[str, Any] = {}
+        self.reasons: dict[str, dict[str, Any]] = {}            # plex rating key -> why Shortlist picked it
         self._labels: dict[str, tuple[float, str | None]] = {}   # library key -> (good until, Shortlist's label id)
         self._rescan_labels = False
 
@@ -63,8 +67,12 @@ class PlexPicksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(str(err)) from err
         except TimeoutError as err:
             raise UpdateFailed(f"Plex took over {READ_BUDGET_SECONDS} s to answer") from err
-        self.rows = rows
         self.shortlist = await self._read_shortlist()
+        if self._shortlist_configured():
+            self.reasons = await self._read_reasons({r.slug for r in rows if r.slug}) or self.reasons
+            explained = apply_reasons(rows, self.reasons)
+            self.shortlist["explained"] = explained
+        self.rows = rows
         now = int(time.time())
         body = payload(self.server, rows, now)
         version = rows_version(body)
@@ -133,33 +141,57 @@ class PlexPicksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return sort_rows(rows, order)
 
+    def _shortlist_configured(self) -> bool:
+        return bool(str(self.options.get(CONF_SHORTLIST_URL) or "").strip() and str(self.options.get(CONF_SHORTLIST_TOKEN) or "").strip())
+
+    async def _shortlist_get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        """One read from Shortlist's API with the owner token (Authorization: Bearer shl_...). Never raises:
+        a problem comes back as {"_error": ...}."""
+        url = str(self.options.get(CONF_SHORTLIST_URL) or "").rstrip("/")
+        token = str(self.options.get(CONF_SHORTLIST_TOKEN) or "").strip()
+        session = async_get_clientsession(self.hass)
+        try:
+            async with session.get(f"{url}{path}", params=params, headers={"Authorization": f"Bearer {token}"},
+                                   timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                if resp.status >= 400:
+                    return {"_error": f"HTTP {resp.status}" + (" (token not accepted)" if resp.status in (401, 403) else "")}
+                return await resp.json(content_type=None)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            return {"_error": str(err)}
+
     async def _read_shortlist(self) -> dict[str, Any]:
         """Shortlist's latest run, when its URL and owner API token are configured. Never fatal."""
-        url = str(self.options.get(CONF_SHORTLIST_URL) or "").rstrip("/")
-        token = str(self.options.get(CONF_SHORTLIST_TOKEN) or "")
-        if not url or not token:
+        if not self._shortlist_configured():
             return {}
-        session = async_get_clientsession(self.hass)
-        for headers in ({"Authorization": f"Bearer {token}"}, {"X-API-Token": token}, {"X-Api-Key": token}):
-            try:
-                async with session.get(f"{url}/api/runs", params={"limit": 1}, headers=headers,
-                                       timeout=aiohttp.ClientTimeout(total=20)) as resp:
-                    if resp.status in (401, 403):
-                        continue
-                    if resp.status >= 400:
-                        return {"error": f"HTTP {resp.status}"}
-                    data = await resp.json(content_type=None)
-            except (aiohttp.ClientError, TimeoutError, ValueError) as err:
-                return {"error": str(err)}
-            runs = data.get("runs") if isinstance(data, dict) else data
-            if isinstance(runs, dict):
-                runs = runs.get("items") or runs.get("data") or []
-            run = (runs or [None])[0] if isinstance(runs, list) else None
-            if not isinstance(run, dict):
-                return {"error": "no runs yet"}
-            keep = {k: run.get(k) for k in ("id", "status", "started_at", "finished_at", "dry_run", "trigger", "stats") if k in run}
-            return keep
-        return {"error": "token not accepted"}
+        data = await self._shortlist_get("/api/runs", {"limit": 1})
+        if isinstance(data, dict) and data.get("_error"):
+            return {"error": data["_error"]}
+        runs = data.get("runs") if isinstance(data, dict) else data
+        if isinstance(runs, dict):
+            runs = runs.get("items") or runs.get("data") or []
+        run = (runs or [None])[0] if isinstance(runs, list) else None
+        if not isinstance(run, dict):
+            return {"error": "no runs yet"}
+        return {k: run.get(k) for k in ("id", "status", "started_at", "finished_at", "dry_run", "trigger", "stats") if k in run}
+
+    async def _read_reasons(self, slugs: set[str]) -> dict[str, dict[str, Any]]:
+        """Why each delivered title was picked, from Shortlist's picks ledger: GET /api/users, then
+        GET /api/users/<id>/rows for the people whose rows are on Plex. Empty when Shortlist cannot be read."""
+        users = await self._shortlist_get("/api/users")
+        if not isinstance(users, list):
+            _LOGGER.debug("Shortlist users not read: %s", users)
+            return {}
+        reasons: dict[str, dict[str, Any]] = {}
+        for user in users:
+            slug = str(user.get("slug") or "")
+            if slugs and slug not in slugs:
+                continue
+            rows = await self._shortlist_get(f"/api/users/{user.get('id')}/rows")
+            if not isinstance(rows, list):
+                _LOGGER.debug("Shortlist rows for %s not read: %s", slug, rows)
+                continue
+            reasons.update(reasons_from_user_rows(rows))
+        return reasons
 
     async def async_refresh_now(self, rescan_labels: bool = True) -> None:
         """Read Plex again now; by default also look Shortlist's labels up again (Shortlist may have written to a

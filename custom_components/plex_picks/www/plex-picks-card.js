@@ -28,6 +28,8 @@
       noMatch: "No rows match this card's filters.", loading: "Loading your picks", watched: (p) => `${p}% watched`,
       waiting: "Waiting for Plex. The rows appear once the first read is done.", stale: "Could not refresh; showing the last rows.",
       playOn: "Play on", openPlex: "Open in Plex", close: "Close", because: "Because you watched", resume: "Resume",
+      why: "Why this pick", from: "From", source_tmdb_similar: "TMDB: similar to what you watched", source_tmdb_discover: "TMDB: by your tastes",
+      source_trakt: "Trakt", source_llm_web: "AI web search", source_popular: "Popular on the server", source_cold_start: "Highest rated on the server",
       sending: (tv) => `Sending to ${tv}…`, sent: (tv) => `Playing on ${tv}`, failed: "Could not play", min: "min", h: "h",
       cast: "Cast", director: "Director", directors: "Directors", episodes: (n, t) => `${n} of ${t} episodes watched`,
       noPlayers: "No TVs found. Plex Picks offers the house's Google Cast devices, or the players in its options.", lib: "Library",
@@ -41,6 +43,8 @@
       noMatch: "Ingen rader passer kortets filtre.", loading: "Henter forslag", watched: (p) => `${p} % sett`,
       waiting: "Venter på Plex. Radene kommer når den første lesingen er ferdig.", stale: "Kunne ikke oppdatere; viser de siste radene.",
       playOn: "Spill på", openPlex: "Åpne i Plex", close: "Lukk", because: "Fordi du så", resume: "Fortsett",
+      why: "Hvorfor dette forslaget", from: "Fra", source_tmdb_similar: "TMDB: ligner på det du har sett", source_tmdb_discover: "TMDB: etter din smak",
+      source_trakt: "Trakt", source_llm_web: "AI-nettsøk", source_popular: "Populært på serveren", source_cold_start: "Høyest vurdert på serveren",
       sending: (tv) => `Sender til ${tv}…`, sent: (tv) => `Spiller på ${tv}`, failed: "Kunne ikke spille", min: "min", h: "t",
       cast: "Skuespillere", director: "Regi", directors: "Regi", episodes: (n, t) => `${n} av ${t} episoder sett`,
       noPlayers: "Fant ingen TV-er. Plex Picks tilbyr husets Google Cast-enheter, eller spillerne i valgene.", lib: "Bibliotek",
@@ -97,6 +101,11 @@
     .chip { font-size: 0.78em; padding: 3px 9px; border-radius: 999px; background: var(--secondary-background-color, rgba(127,127,127,0.2)); color: var(--primary-text-color); }
     .reason { font-size: 0.9em; color: var(--secondary-text-color); margin: 0 0 10px; }
     .reason b { color: var(--primary-text-color); }
+    .why { margin: 0 0 12px; padding: 10px 12px; border-left: 3px solid var(--primary-color, #e5a00d); background: var(--secondary-background-color, rgba(127,127,127,0.12)); border-radius: 0 10px 10px 0; line-height: 1.45; }
+    .why .lbl { display: block; font-size: 0.72em; letter-spacing: 0.06em; text-transform: uppercase; color: var(--secondary-text-color); margin-bottom: 2px; }
+    .why .src { display: block; font-size: 0.82em; color: var(--secondary-text-color); margin-top: 4px; }
+    .cap .w { font-size: 0.74em; line-height: 1.25; color: var(--primary-color, #e5a00d); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    :host([compact]) .cap .w { display: none; }
     .summary { line-height: 1.5; margin: 0 0 14px; }
     .people { font-size: 0.9em; color: var(--secondary-text-color); margin: 0 0 14px; line-height: 1.5; }
     .people b { color: var(--primary-text-color); font-weight: 600; }
@@ -366,10 +375,23 @@
       const img = it.thumb
         ? `<img src="${esc(it.thumb)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="ph" style="display:none">${esc(it.title)}</div>`
         : `<div class="ph">${esc(it.title)}</div>`;
-      return `<div class="cell" role="listitem"><button class="tile" data-row="${esc(row.id)}" data-key="${esc(it.rating_key)}" aria-label="${esc(label)}">
+      const why = this._why(row, it);
+      return `<div class="cell" role="listitem"><button class="tile" data-row="${esc(row.id)}" data-key="${esc(it.rating_key)}" aria-label="${esc(label)}${why ? `. ${esc(why)}` : ""}">
         <div class="poster">${img}${badge ? `<span class="badge">${badge}</span>` : ""}${pct != null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}</div>
-        <div class="cap"><div class="t">${esc(it.title)}</div>${meta ? `<div class="m">${esc(meta)}</div>` : ""}</div>
+        <div class="cap"><div class="t">${esc(it.title)}</div>${meta ? `<div class="m">${esc(meta)}</div>` : ""}${why ? `<div class="w" title="${esc(why)}">${esc(why)}</div>` : ""}</div>
       </button></div>`;
+    }
+
+    /* one line on why a title is there: Shortlist's own sentence when its API is connected, else the row's seed */
+    _why(row, it) {
+      if (it.reason) return it.reason;
+      if (it.seed) return `${this._t("because")} ${it.seed}`;
+      if (row && row.kind === "because" && row.seed) return `${this._t("because")} ${row.seed}`;
+      return "";
+    }
+
+    _sources(it) {
+      return (it.sources || []).map((s) => this._t(`source_${s}`) || s).filter((v, i, a) => v && a.indexOf(v) === i);
     }
 
     _arrows(ev, scroller) {
@@ -413,7 +435,11 @@
       const meta = [item.year, this._dur(item.duration_ms), item.content_rating, item.audience_rating ? `★ ${item.audience_rating}` : (item.rating ? `★ ${item.rating}` : null),
         item.leaf_count ? this._t("episodes", item.viewed_leaf_count || 0, item.leaf_count) : null].filter(Boolean);
       const pct = item.progress != null ? Math.round(item.progress * 100) : null;
-      const reason = row && row.kind === "because" && row.seed ? `<p class="reason">${esc(this._t("because"))} <b>${esc(row.seed)}</b></p>` : (row && !["continue", "recent"].includes(row.kind) ? `<p class="reason">${esc(this._rowTitle(row))}${row.library ? ` · ${esc(row.library)}` : ""}</p>` : "");
+      const why = this._why(row, item);
+      const sources = this._sources(item);
+      const reason = why
+        ? `<div class="why"><span class="lbl">${esc(this._t("why"))}</span>${esc(why)}${sources.length ? `<span class="src">${esc(this._t("from"))}: ${esc(sources.join(" · "))}${row && row.kind !== "because" ? ` · ${esc(this._rowTitle(row))}` : ""}</span>` : ""}</div>`
+        : (row && !["continue", "recent"].includes(row.kind) ? `<p class="reason">${esc(this._rowTitle(row))}${row.library ? ` · ${esc(row.library)}` : ""}</p>` : "");
       const people = [
         item.directors && item.directors.length ? `<b>${esc(item.directors.length > 1 ? this._t("directors") : this._t("director"))}:</b> ${esc(item.directors.join(", "))}` : "",
         item.cast && item.cast.length ? `<b>${esc(this._t("cast"))}:</b> ${esc(item.cast.join(", "))}` : "",

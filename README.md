@@ -61,6 +61,15 @@ Where the rows come from: Shortlist reads each person's Plex watch history night
 collections (Because you watched, Picked for You, Watch it again...). Plex Picks shows those rows; it does not invent
 its own. Until Shortlist has run, the card shows only Continue Watching and New on the server.
 
+## Why this pick
+
+Plex holds Shortlist's rows but not its reasons. Give the integration Shortlist's address and owner API token
+(Configure: Shortlist URL, for example `http://<repository id>-shortlist:5959` on Home Assistant OS, and the token
+from Shortlist's Settings, which starts with `shl_`) and it reads Shortlist's picks ledger on every refresh. Each
+title then carries Shortlist's own sentence ("Because you watched Scream 7"), the watched title that produced it and
+the sources that suggested it. The card shows the sentence under the poster and a **Why this pick** panel in the
+detail sheet. Without the token the card still works; the rows are just unexplained.
+
 ## Entities and services
 
 - `sensor.plex_picks_picks_<slug>`: how many titles Shortlist has in rows for that person, with one line per row.

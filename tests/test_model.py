@@ -43,6 +43,32 @@ def test_labels_as_plex_returns_them_in_a_detail_record():
     assert m.slug_from_labels(["Shortlist_themarkchristie", "Shortlist"]) == "themarkchristie"
 
 
+def test_reasons_from_shortlist_user_rows_and_apply():
+    entries = [
+        {"collection_id": 1, "slug": "picked", "picks": [
+            {"rank": 1, "title": "Heat", "reason": "Because you watched Scream 7", "rating_key": 1001, "media_type": "movie",
+             "collection_slug": "picked", "library": "Movies", "section_key": "1", "seed_title": "Scream 7", "sources": ["tmdb_similar"], "affinity": 0.8},
+            {"rank": 2, "title": "Lost", "reason": "Popular", "rating_key": 0, "media_type": "movie", "collection_slug": "picked", "library": "Movies",
+             "section_key": "1", "seed_title": None, "sources": [], "affinity": 1.0},
+        ]},
+        {"collection_id": 1, "slug": "picked", "picks": [
+            {"rank": 1, "title": "Heat", "reason": "Because you watched Heat (1995) in 4K", "rating_key": 2001, "media_type": "movie",
+             "collection_slug": "picked", "library": "4K Movies", "section_key": "2", "seed_title": "Scream 7", "sources": ["tmdb_similar", "tmdb_discover"], "affinity": 0.6},
+        ]},
+    ]
+    reasons = m.reasons_from_user_rows(entries)
+    assert set(reasons) == {"1001", "2001"}          # rating_key 0 is skipped
+    assert reasons["1001"]["seed"] == "Scream 7" and reasons["1001"]["sources"] == ["tmdb_similar"]
+    rows = [m.Row(id="c1", kind=m.KIND_PICKED, title="Picked", items=[m.item_from_metadata(movie("1001", "Heat")), m.item_from_metadata(movie("1002", "Casino"))]),
+            m.Row(id="continue", kind=m.KIND_CONTINUE, title="Continue", items=[m.item_from_metadata(movie("1001", "Heat"))])]
+    assert m.apply_reasons(rows, reasons) == 1
+    heat, casino = rows[0].items
+    assert heat.reason == "Because you watched Scream 7" and heat.seed == "Scream 7" and heat.sources == ["tmdb_similar"] and heat.affinity == 0.8
+    assert casino.reason is None
+    assert rows[1].items[0].reason is None             # Continue watching is never "explained"
+    assert m.apply_reasons(rows, {}) == 0
+
+
 def test_invisible_signature_is_stripped_from_titles():
     signed = "✨ 4K Movies Picked for You​‌‌​‌"
     assert m.clean_title(signed) == "4K Movies Picked for You"

@@ -98,9 +98,15 @@ def sample_payload():
     rows.append(m.recent_row([movie_md(60 + i, *mv) for i, mv in enumerate(MOVIES[3:9])] + [show_md(60 + i, *s) for i, s in enumerate(SHOWS[:3])], limit=12))
     rows = m.sort_rows(rows, ["Movies", "4K Movies", "TV Shows"])
     payload = m.payload({"id": "a099b0a8a4a4b25746d4d5ac24f48b730371d228", "name": "Mark's Media Pro"}, rows, 1792300000)
+    seeds = ["Scream 7", "Dateline: Secrets Uncovered", "Heat", "Slow Horses"]
     n = 0
     for row in payload["rows"]:
         for item in row["items"]:
+            if row["kind"] in ("picked", "because", "again"):
+                item["reason"] = f"Because you watched {seeds[n % len(seeds)]}"
+                item["seed"] = seeds[n % len(seeds)]
+                item["sources"] = ["tmdb_similar"] if n % 3 else ["tmdb_discover", "tmdb_similar"]
+                item["affinity"] = 0.7
             item["thumb"] = poster(item["title"], n)
             item["art"] = art(n)
             n += 1

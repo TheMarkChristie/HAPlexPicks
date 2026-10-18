@@ -32,7 +32,7 @@ window.addEventListener('error', e => window.__errors.push('ERROR ' + e.message 
 window.addEventListener('unhandledrejection', e => window.__errors.push('REJECTION ' + (e.reason && e.reason.message || e.reason)));
 customElements.define('home-assistant', class extends HTMLElement {{}});
 const DATA = {json.dumps(data)};
-window.hass = {{ language: 'en', states: {{}}, callWS: async (m) => DATA, callService: async () => ({{}}), connection: {{ subscribeEvents: async () => () => {{}} }} }};
+window.hass = {{ language: 'en', states: {{}}, callWS: async (m) => DATA, callService: async () => ({{}}), connection: {{ subscribeMessage: async () => () => {{}}, subscribeEvents: async () => () => {{}} }} }};
 </script>
 <script type="module" src="/plex-picks-card.js?v=test"></script>
 </body></html>"""

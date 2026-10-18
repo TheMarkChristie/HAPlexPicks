@@ -67,6 +67,11 @@ class Item:
     library: str | None = None
     colors: dict[str, str] | None = None   # Plex's UltraBlurColors, when the server sends them
     play_key: str | None = None            # what to hand to play_media (the episode for Continue Watching, else the item)
+    # why Shortlist picked it, from its own picks ledger (only when Shortlist's URL and API token are configured)
+    reason: str | None = None              # Shortlist's sentence, e.g. "Because you watched Scream 7"
+    seed: str | None = None                # the watched title that produced it, when Shortlist knows it
+    sources: list[str] = field(default_factory=list)   # candidate-source ids: tmdb_similar, tmdb_discover, trakt, llm_web
+    affinity: float | None = None          # 0..1, how strongly the suggesting source vouched for it
 
 
 @dataclass
@@ -83,6 +88,49 @@ class Row:
     updated_at: int | None = None
     thumb_key: str | None = None
     items: list[Item] = field(default_factory=list)
+
+
+def reasons_from_user_rows(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Shortlist's GET /api/users/<id>/rows -> {plex rating key: {reason, seed, sources, affinity, row}}.
+
+    Each entry is one (row, library) delivery with its live picks; a pick's rating_key is the Plex item in that
+    library, so the same film in Movies and 4K Movies has two keys and both get their reason. rating_key 0 means
+    Shortlist never matched the title to the library and is skipped."""
+    out: dict[str, dict[str, Any]] = {}
+    for entry in entries or []:
+        row_slug = str(entry.get("slug") or entry.get("collection_slug") or "")
+        for pick in entry.get("picks") or []:
+            key = pick.get("rating_key")
+            if not key or str(key) == "0":
+                continue
+            out[str(key)] = {
+                "reason": (pick.get("reason") or "").strip() or None,
+                "seed": pick.get("seed_title") or None,
+                "sources": [str(s) for s in (pick.get("sources") or []) if s],
+                "affinity": pick.get("affinity"),
+                "row": pick.get("collection_slug") or row_slug or None,
+            }
+    return out
+
+
+def apply_reasons(rows: list[Row], reasons: dict[str, dict[str, Any]]) -> int:
+    """Put Shortlist's reasons on the items that have one; returns how many items were explained."""
+    hits = 0
+    if not reasons:
+        return 0
+    for row in rows:
+        if row.kind in (KIND_CONTINUE, KIND_RECENT):
+            continue
+        for item in row.items:
+            why = reasons.get(str(item.rating_key))
+            if not why:
+                continue
+            item.reason = why.get("reason")
+            item.seed = why.get("seed")
+            item.sources = list(why.get("sources") or [])
+            item.affinity = why.get("affinity")
+            hits += 1
+    return hits
 
 
 def slug_from_labels(labels: list[str] | None) -> str | None:
