@@ -37,6 +37,21 @@ def test_slug_and_labels():
     assert m.is_shortlist_collection(["PMM", "deployarr_managed"]) is False
 
 
+def test_labels_as_plex_returns_them_in_a_detail_record():
+    # Plex title-cases tag names in /library/collections/<id>: seen live on 18 Oct 2026
+    assert m.is_shortlist_collection(["Shortlist_themarkchristie", "Shortlist"]) is True
+    assert m.slug_from_labels(["Shortlist_themarkchristie", "Shortlist"]) == "themarkchristie"
+
+
+def test_invisible_signature_is_stripped_from_titles():
+    signed = "✨ 4K Movies Picked for You​‌‌​‌"
+    assert m.clean_title(signed) == "4K Movies Picked for You"
+    assert m.kind_from_title(signed) == m.KIND_PICKED
+    assert m.seed_from_title("Because you watched Heat​‌") == "Heat"
+    row = m.row_from_collection({"ratingKey": "1", "title": signed}, ["Shortlist", "Shortlist_mark"], [], "4K Movies", "movie")
+    assert row.title == "4K Movies Picked for You" and row.slug == "mark" and row.kind == m.KIND_PICKED
+
+
 def test_kinds_titles_and_seeds():
     assert m.kind_from_title("✨ Movies Picked for You") == m.KIND_PICKED
     assert m.clean_title("✨ Movies Picked for You") == "Movies Picked for You"

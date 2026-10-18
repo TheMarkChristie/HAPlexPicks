@@ -28,6 +28,12 @@ KIND_ORDER = [KIND_CONTINUE, KIND_BECAUSE, KIND_PICKED, KIND_AGAIN, KIND_POPULAR
 
 _LEADING_SYMBOLS = re.compile(r"^[^\w\"'(]+", re.UNICODE)
 _BECAUSE = re.compile(r"because you watched\s*(.*)$", re.IGNORECASE)
+# Shortlist signs its row names with an invisible tail of zero-width characters; Plex keeps them in the title
+_INVISIBLE = re.compile(r"[​‌‍⁠﻿]+")
+
+
+def _visible(text: str | None) -> str:
+    return _INVISIBLE.sub("", text or "")
 
 
 @dataclass
@@ -77,20 +83,23 @@ class Row:
 
 
 def slug_from_labels(labels: list[str] | None) -> str | None:
-    """shortlist_<slug> -> slug; the plain 'shortlist' label names nobody."""
+    """shortlist_<slug> -> slug; the plain 'shortlist' label names nobody. Plex title-cases tag names in a
+    collection's detail record ("Shortlist_mark"), so the comparison ignores case and keeps the slug lower-case."""
     for label in labels or []:
-        if label.startswith(LABEL_PREFIX) and label != LABEL_PLAIN:
-            return label[len(LABEL_PREFIX):]
+        low = str(label).lower()
+        if low.startswith(LABEL_PREFIX) and low != LABEL_PLAIN:
+            return low[len(LABEL_PREFIX):]
     return None
 
 
 def is_shortlist_collection(labels: list[str] | None) -> bool:
-    return any(label == LABEL_PLAIN or label.startswith(LABEL_PREFIX) for label in labels or [])
+    return any(str(label).lower() == LABEL_PLAIN or str(label).lower().startswith(LABEL_PREFIX) for label in labels or [])
 
 
 def clean_title(title: str | None) -> str:
-    """Shortlist's default names start with a sparkle; the card prefers words."""
-    return _LEADING_SYMBOLS.sub("", (title or "").strip()).strip() or (title or "").strip()
+    """Shortlist's default names start with a sparkle and end in an invisible signature; the card prefers words."""
+    raw = _visible(title).strip()
+    return _LEADING_SYMBOLS.sub("", raw).strip() or raw
 
 
 def kind_from_title(title: str | None) -> str:
@@ -111,7 +120,7 @@ def kind_from_title(title: str | None) -> str:
 
 
 def seed_from_title(title: str | None) -> str | None:
-    m = _BECAUSE.search(title or "")
+    m = _BECAUSE.search(_visible(title))
     if not m:
         return None
     seed = m.group(1).strip().strip(":").strip()
