@@ -100,8 +100,16 @@ class PlexClient:
         return (await self.get("/library/sections")).get("Directory", []) or []
 
     async def labels(self, section_key: str) -> list[dict[str, Any]]:
-        """The labels in use in one library: [{key: '12345', title: 'shortlist'}, ...]."""
-        return (await self.get(f"/library/sections/{section_key}/label")).get("Directory", []) or []
+        """The labels in use in one library, on its items and on its collections (type 18):
+        [{key: '12345', title: 'shortlist'}, ...]. Shortlist labels collections, so both listings are asked."""
+        seen: dict[str, dict[str, Any]] = {}
+        for params in ({}, {"type": 18}):
+            try:
+                for lab in (await self.get(f"/library/sections/{section_key}/label", **params)).get("Directory", []) or []:
+                    seen.setdefault(str(lab.get("key")), lab)
+            except PlexError as err:
+                _LOGGER.debug("label listing %s for section %s failed: %s", params, section_key, err)
+        return list(seen.values())
 
     async def collections(self, section_key: str, label_id: str | None = None, size: int = 50) -> list[dict[str, Any]]:
         """Collections in one library, optionally only those carrying a label (by label id, as python-plexapi does:
