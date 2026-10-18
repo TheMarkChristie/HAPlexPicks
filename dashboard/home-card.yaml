@@ -1,8 +1,9 @@
 # The same card, compact, for a Sections view on the Home dashboard: one row, smaller posters, tap opens the sheet.
 type: custom:plex-picks-card
 compact: true
-rows:
+rows:            # the first of these that exists shows: Because you watched once Shortlist has run, Continue watching until then
   - because
+  - continue
 max_items: 12
 players:
   - media_player.77_oled_tq77s85daexxc

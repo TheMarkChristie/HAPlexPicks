@@ -29,6 +29,7 @@ Tap a poster for the details and a Play button that sends the title to a TV thro
    token for a last-run sensor.
 
 The card is served by the integration and registered as a dashboard resource; there is nothing else to install.
+The integration ships its own icon (Home Assistant 2026.3 or newer shows it without a brands submission).
 
 ## The card
 

@@ -43,13 +43,15 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddC
 
 
 def _device(coordinator: PlexPicksCoordinator) -> DeviceInfo:
-    return DeviceInfo(identifiers={(DOMAIN, coordinator.entry.entry_id)}, name=f"{NAME}: {coordinator.server.get('name')}",
-                      manufacturer=NAME, model="Plex Media Server", entry_type=DeviceEntryType.SERVICE,
-                      configuration_url=str(coordinator.server.get("url") or ""))
+    """One service device named plainly "Plex Picks", so entity ids read sensor.plex_picks_<thing>; the server is
+    the model."""
+    return DeviceInfo(identifiers={(DOMAIN, coordinator.entry.entry_id)}, name=NAME,
+                      manufacturer="Plex Picks", model=str(coordinator.server.get("name") or "Plex Media Server"),
+                      entry_type=DeviceEntryType.SERVICE, configuration_url=str(coordinator.server.get("url") or ""))
 
 
 class _Base(CoordinatorEntity[PlexPicksCoordinator], SensorEntity):
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _unrecorded_attributes = BIG
 
     def __init__(self, coordinator: PlexPicksCoordinator) -> None:
@@ -71,7 +73,7 @@ class PicksSensor(_Base):
         super().__init__(coordinator)
         self._slug = slug
         self._attr_unique_id = f"{coordinator.entry.entry_id}_picks_{slug}"
-        self._attr_name = f"Plex Picks {slug}"
+        self._attr_name = f"Picks {slug}"
         self._attr_icon = "mdi:movie-open-star-outline"
 
     def _mine(self) -> list[Row]:
@@ -94,7 +96,7 @@ class KindSensor(_Base):
         super().__init__(coordinator)
         self._kind = kind
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{kind}"
-        self._attr_name = f"Plex Picks {label.lower()}"
+        self._attr_name = label
         self._attr_icon = icon
 
     def _row(self) -> Row | None:
@@ -118,7 +120,7 @@ class LastRunSensor(_Base):
     def __init__(self, coordinator: PlexPicksCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.entry.entry_id}_last_run"
-        self._attr_name = "Plex Picks Shortlist last run"
+        self._attr_name = "Shortlist last run"
         self._attr_icon = "mdi:robot-outline"
 
     @property
