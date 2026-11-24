@@ -36,6 +36,8 @@
       unavailable: "unavailable",
       pickedFilms: "Films picked for you", pickedShows: "Shows picked for you", againFilms: "Films to watch again", againShows: "Shows to watch again",
       popularFilms: "Popular films on the server", popularShows: "Popular shows on the server",
+      addWatch: "Add to watch list", removeWatch: "Remove from watch list", watchAdded: "Added to your watch list",
+      watchRemoved: "Removed from your watch list", watchFailed: "Could not change the watch list",
     },
     nb: {
       continue: "Fortsett å se", recent: "Nytt på serveren", notSetUp: "Plex Picks er ikke satt opp ennå. Legg til integrasjonen under Innstillinger > Enheter og tjenester.",
@@ -51,6 +53,8 @@
       unavailable: "utilgjengelig",
       pickedFilms: "Filmer valgt for deg", pickedShows: "Serier valgt for deg", againFilms: "Filmer å se igjen", againShows: "Serier å se igjen",
       popularFilms: "Populære filmer på serveren", popularShows: "Populære serier på serveren",
+      addWatch: "Legg til på se-listen", removeWatch: "Fjern fra se-listen", watchAdded: "Lagt til på se-listen din",
+      watchRemoved: "Fjernet fra se-listen din", watchFailed: "Kunne ikke endre se-listen",
     },
   };
 
@@ -121,6 +125,8 @@
   `;
 
   const PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
+  const ADD_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/></svg>';
+  const ON_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/></svg>';
   const DEFAULTS = { rows: null, exclude: [], slug: null, libraries: null, compact: false, max_items: 40, players: null, title: "", merge_libraries: true };
   const MERGEABLE = ["picked", "again", "because", "popular", "seasonal", "shortlist"];
   const RELOAD_MS = 6 * 3600 * 1000;           // fresh signed image addresses well before they expire (12 h)
@@ -142,6 +148,7 @@
       this._timer = null;
       this._retry = null;
       this._sheet = null;
+      this._watchLocal = new Map();  // guid -> on the Watchlist, from this card's own button until the next read
     }
 
     setConfig(config) {
@@ -215,6 +222,7 @@
         const same = !force && this._data && data.version && data.version === this._data.version;
         const players = this._data && JSON.stringify(this._data.players) === JSON.stringify(data.players);
         this._data = data;
+        this._watchLocal.clear();
         this._loadedAt = Date.now();
         const hadProblem = this._error || this._notice;
         this._error = null;
@@ -450,6 +458,7 @@
             return `<button class="btn play" data-player="${esc(p.entity_id)}" data-name="${esc(p.name)}"${off ? " disabled" : ""}>${PLAY_ICON}${esc(this._t("playOn"))} ${esc(p.name)}${off ? ` (${esc(this._t("unavailable"))})` : ""}</button>`;
           }).join("")
         : `<span class="status">${esc(this._t("noPlayers"))}</span>`;
+      const watchBtn = item.watch_guid ? `<button class="btn secondary watch">${this._watchLabel(item.watch_guid)}</button>` : "";
       const plexUrl = server.id ? `https://app.plex.tv/desktop/#!/server/${esc(server.id)}/details?key=%2Flibrary%2Fmetadata%2F${esc(item.rating_key)}` : "https://app.plex.tv/";
       const dialog = document.createElement("dialog");
       dialog.className = "sheet";
@@ -465,11 +474,13 @@
             ${reason}
             ${item.summary ? `<p class="summary">${esc(item.summary)}</p>` : ""}
             ${people ? `<p class="people">${people}</p>` : ""}
-            <div class="actions">${buttons}<a class="btn secondary" href="${plexUrl}" target="_blank" rel="noopener">${esc(this._t("openPlex"))}</a><div class="status" aria-live="polite"></div></div>
+            <div class="actions">${buttons}${watchBtn}<a class="btn secondary" href="${plexUrl}" target="_blank" rel="noopener">${esc(this._t("openPlex"))}</a><div class="status" aria-live="polite"></div></div>
           </div>`;
       dialog.addEventListener("click", (ev) => { if (ev.target === dialog) dialog.close(); });   // the backdrop
       dialog.querySelector(".close").addEventListener("click", () => dialog.close());
       dialog.querySelectorAll(".play").forEach((b) => b.addEventListener("click", () => this._play(item, b, dialog)));
+      const watch = dialog.querySelector(".watch");
+      if (watch) watch.addEventListener("click", () => this._toggleWatch(item, watch, dialog));
       dialog.addEventListener("close", () => {
         dialog.remove();
         if (this._sheet === dialog) this._sheet = null;
@@ -479,6 +490,39 @@
       this.shadowRoot.appendChild(dialog);
       this._sheet = dialog;
       dialog.showModal();
+    }
+
+    _onWatchlist(guid) {
+      if (this._watchLocal.has(guid)) return this._watchLocal.get(guid);
+      const list = (this._data && this._data.payload && this._data.payload.watchlist) || [];
+      return list.includes(guid);
+    }
+
+    _watchLabel(guid) {
+      return this._onWatchlist(guid) ? `${ON_ICON}${esc(this._t("removeWatch"))}` : `${ADD_ICON}${esc(this._t("addWatch"))}`;
+    }
+
+    /* the Plex Watchlist (plex.tv's, the one every Plex app shows): add the title or take it off */
+    async _toggleWatch(item, button, dialog) {
+      const status = dialog.querySelector(".status");
+      const guid = item.watch_guid;
+      const add = !this._onWatchlist(guid);
+      button.disabled = true;
+      status.className = "status";
+      status.textContent = "";
+      try {
+        const res = await this._hass.callWS({ type: "plex_picks/watchlist", guid, add });
+        this._watchLocal.set(guid, !!(res && res.on_watchlist));
+        const msg = this._t(add ? "watchAdded" : "watchRemoved");
+        status.textContent = msg;
+        this.dispatchEvent(new CustomEvent("hass-notification", { detail: { message: msg }, bubbles: true, composed: true }));
+      } catch (e) {
+        status.className = "status err";
+        status.textContent = `${this._t("watchFailed")}: ${(e && (e.message || e.error)) || e}`;
+      } finally {
+        button.innerHTML = this._watchLabel(guid);
+        button.disabled = false;
+      }
     }
 
     async _play(item, button, dialog) {

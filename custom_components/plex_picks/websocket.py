@@ -3,6 +3,7 @@
   plex_picks/data       the rows it shows, with signed image URLs, plus the TVs it can play on
   plex_picks/subscribe  a message whenever the rows change (any signed-in user; subscribe_events would refuse a
                         custom event to non-admins)
+  plex_picks/watchlist  put a title on the owner's Plex Watchlist or take it off
 
 Image URLs are signed with the asking user's refresh token, so a poster URL only works for a signed-in browser and the
 Plex token stays on the server. A signed URL is reused until an hour before it expires, so repeated reads give the
@@ -19,7 +20,10 @@ from homeassistant.components.http.auth import async_sign_path
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
-from .const import BACKDROP, CONF_PLAYERS, DOMAIN, EVENT_UPDATED, IMAGE_URL, POSTER, SIGNED_URL_HOURS, WS_DATA, WS_SHORTLIST, WS_SUBSCRIBE
+from .const import (
+    BACKDROP, CONF_PLAYERS, DOMAIN, EVENT_UPDATED, IMAGE_URL, PLEX_SCHEME, POSTER, SIGNED_URL_HOURS, WS_DATA, WS_SHORTLIST,
+    WS_SUBSCRIBE, WS_WATCHLIST,
+)
 
 _SIGNED = f"{DOMAIN}_signed_urls"
 _SIGNED_MAX = 8000
@@ -81,6 +85,38 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_data)
     websocket_api.async_register_command(hass, ws_subscribe)
     websocket_api.async_register_command(hass, ws_shortlist)
+    websocket_api.async_register_command(hass, ws_watchlist)
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): WS_WATCHLIST,
+    vol.Required("guid"): str,               # the title's plex:// guid (an item's watch_guid)
+    vol.Required("add"): bool,
+    vol.Optional("entry_id"): str,
+})
+@websocket_api.async_response
+async def ws_watchlist(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Put a title on the owner's Plex Watchlist or take it off (the card's button). Any signed-in user, like Play."""
+    from . import coordinator_for  # noqa: PLC0415
+    from .plex_api import PlexAuthError, PlexError  # noqa: PLC0415
+
+    coordinator = coordinator_for(hass, msg.get("entry_id"))
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_ready", "Plex Picks is not set up")
+        return
+    guid = str(msg["guid"])
+    if not guid.startswith(PLEX_SCHEME):
+        connection.send_error(msg["id"], "bad_guid", "Only titles Plex knows (plex:// guids) can go on the Watchlist")
+        return
+    try:
+        on = await coordinator.async_watchlist_change(guid, bool(msg["add"]))
+    except PlexAuthError:
+        connection.send_error(msg["id"], "auth", "plex.tv did not accept the token")
+        return
+    except PlexError as err:
+        connection.send_error(msg["id"], "plex_error", str(err))
+        return
+    connection.send_result(msg["id"], {"guid": guid, "on_watchlist": on})
 
 
 @websocket_api.websocket_command({
@@ -152,6 +188,7 @@ async def ws_data(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
         "players": players(hass, coordinator.options.get(CONF_PLAYERS)),
         "server": coordinator.server,
         "shortlist": coordinator.shortlist,
+        "watchlist_rows": coordinator.watch_status,
         "generated_at": coordinator.data.get("generated_at"),
         "version": coordinator.data.get("version"),
         "entry_id": coordinator.entry.entry_id,

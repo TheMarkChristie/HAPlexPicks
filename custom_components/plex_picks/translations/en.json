@@ -43,13 +43,17 @@
           "row_size": "Most titles read per row",
           "interval_minutes": "Read Plex every",
           "shortlist_url": "Shortlist URL",
-          "shortlist_token": "Shortlist API token"
+          "shortlist_token": "Shortlist API token",
+          "watchlist_rows": "Keep a To watch row on my Plex Home",
+          "watchlist_libraries": "Libraries to put To watch titles in, preferred first"
         },
         "data_description": {
           "players": "Leave empty to offer the house's Google Cast devices; the card asks which one each time. Plex clients, Samsung or Android TVs can be listed instead.",
           "plex_player_for": "One line per TV when the Plex client that appears for it should be named: media_player.tv = media_player.plex_tv",
           "shortlist_url": "Optional, for the last-run sensor: where Shortlist's web interface is, for example http://<repository id>-shortlist:5959 (the hostname on the add-on's Info page)",
-          "shortlist_token": "Optional: Shortlist's owner API token from its Settings"
+          "shortlist_token": "Optional: Shortlist's owner API token from its Settings",
+          "watchlist_rows": "Copies your Plex Watchlist into a To watch collection in each library that holds its titles, shown on your own Home only. Turn it on in one Home Assistant per Plex server.",
+          "watchlist_libraries": "Comma-separated library names, for a title held in several (Movies and 4K Movies): it goes in the first of these that has it. Empty: the server's own library order."
         }
       }
     }

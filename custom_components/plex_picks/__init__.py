@@ -2,11 +2,13 @@
 server, read from Plex and shown in Home Assistant as a Netflix-style card, with a Play button for the TVs.
 
 The integration serves its own card, proxies posters so the Plex token never reaches a browser, and offers the
-websocket commands the card reads and two services (refresh, play). The services, the websocket commands and the
+websocket commands the card reads and two services (refresh, play). It also reads the owner's Plex Watchlist (the
+card's Add to watch list button changes it) and, when the option is on, keeps a To watch row on the owner's Plex Home. The services, the websocket commands and the
 image view are registered once, in async_setup, and look the loaded entry up per call."""
 from __future__ import annotations
 
 import hashlib
+from datetime import timedelta
 from pathlib import Path
 
 from homeassistant.components import frontend
@@ -14,11 +16,12 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
 from .card_resource import async_remove_card_resource, async_schedule_card_resource
-from .const import CARD_FILE, DOMAIN, URL_BASE
+from .const import CARD_FILE, DOMAIN, URL_BASE, WATCHLIST_MINUTES
 from .coordinator import PlexPicksCoordinator
 from .services import async_register_services
 from .views import PlexPicksImageView
@@ -89,6 +92,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_options_changed))
+    # the Watchlist: read now (in the background, so start-up never waits on plex.tv) and every WATCHLIST_MINUTES
+    entry.async_on_unload(async_track_time_interval(
+        hass, coordinator.async_watchlist_tick, timedelta(minutes=WATCHLIST_MINUTES), cancel_on_shutdown=True))
+    entry.async_create_background_task(hass, coordinator.async_watchlist_tick(), f"{DOMAIN} watchlist")
     return True
 
 

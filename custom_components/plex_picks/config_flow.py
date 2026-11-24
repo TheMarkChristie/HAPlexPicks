@@ -13,9 +13,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import (
     CONF_CONTINUE, CONF_INTERVAL, CONF_PLAYERS, CONF_PLEX_PLAYER_FOR, CONF_RECENT, CONF_RECENT_SIZE, CONF_ROW_SIZE,
     CONF_SERVER_ID, CONF_SERVER_NAME, CONF_SHORTLIST_TOKEN, CONF_SHORTLIST_URL, CONF_TOKEN, CONF_URL,
-    DEFAULT_INTERVAL, DEFAULT_RECENT_SIZE, DEFAULT_ROW_SIZE, DOMAIN, MAX_INTERVAL, MIN_INTERVAL,
+    CONF_WATCHLIST_LIBRARIES, CONF_WATCHLIST_ROWS, DEFAULT_INTERVAL, DEFAULT_RECENT_SIZE, DEFAULT_ROW_SIZE, DOMAIN, MAX_INTERVAL, MIN_INTERVAL,
 )
 from .plex_api import PlexAuthError, PlexClient, PlexError
+from .watchlist import parse_names
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ class PlexPicksOptionsFlow(OptionsFlow):
             cleaned[CONF_SHORTLIST_URL] = str(cleaned.get(CONF_SHORTLIST_URL) or "").strip().rstrip("/")
             cleaned[CONF_SHORTLIST_TOKEN] = str(cleaned.get(CONF_SHORTLIST_TOKEN) or "").strip()
             cleaned[CONF_PLEX_PLAYER_FOR] = str(cleaned.get(CONF_PLEX_PLAYER_FOR) or "").strip()
+            cleaned[CONF_WATCHLIST_LIBRARIES] = ", ".join(parse_names(cleaned.get(CONF_WATCHLIST_LIBRARIES)))
             return self.async_create_entry(title="", data=cleaned)
         o = self.config_entry.options
         schema = vol.Schema({
@@ -115,6 +117,8 @@ class PlexPicksOptionsFlow(OptionsFlow):
                 selector.NumberSelectorConfig(min=5, max=60, step=1, mode=selector.NumberSelectorMode.BOX)),
             vol.Optional(CONF_INTERVAL, default=int(o.get(CONF_INTERVAL, DEFAULT_INTERVAL))): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=MIN_INTERVAL, max=MAX_INTERVAL, step=5, unit_of_measurement="min", mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional(CONF_WATCHLIST_ROWS, default=bool(o.get(CONF_WATCHLIST_ROWS, False))): selector.BooleanSelector(),
+            vol.Optional(CONF_WATCHLIST_LIBRARIES, description={"suggested_value": o.get(CONF_WATCHLIST_LIBRARIES, "")}): selector.TextSelector(),
             vol.Optional(CONF_SHORTLIST_URL, description={"suggested_value": o.get(CONF_SHORTLIST_URL, "")}): selector.TextSelector(
                 selector.TextSelectorConfig(type=selector.TextSelectorType.URL)),
             vol.Optional(CONF_SHORTLIST_TOKEN, description={"suggested_value": o.get(CONF_SHORTLIST_TOKEN, "")}): selector.TextSelector(

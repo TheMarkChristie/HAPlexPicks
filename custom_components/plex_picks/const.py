@@ -33,6 +33,8 @@ CONF_ROW_SIZE = "row_size"                  # most items read per row
 CONF_CONTINUE = "continue_watching"         # include the owner's Continue Watching row
 CONF_RECENT = "recently_added"              # include a New on the server row
 CONF_RECENT_SIZE = "recent_size"
+CONF_WATCHLIST_ROWS = "watchlist_rows"      # keep a To watch row on the owner's Plex Home from Plex's Watchlist
+CONF_WATCHLIST_LIBRARIES = "watchlist_libraries"  # comma-separated library names, preferred first, for a title in several
 
 DEFAULT_INTERVAL = 30
 DEFAULT_ROW_SIZE = 40
@@ -45,6 +47,7 @@ EVENT_UPDATED = f"{DOMAIN}_updated"            # fired when the rows changed, wi
 WS_DATA = f"{DOMAIN}/data"
 WS_SUBSCRIBE = f"{DOMAIN}/subscribe"           # any signed-in user (subscribe_events refuses custom events to non-admins)
 WS_SHORTLIST = f"{DOMAIN}/shortlist"           # admins only: relay one /api/ request to Shortlist with the configured token
+WS_WATCHLIST = f"{DOMAIN}/watchlist"           # add a title to, or take it off, the owner's Plex Watchlist
 
 # how hard Plex is asked: one request at a time a third of a second apart, short timeouts, the whole read bounded,
 # and each library's Shortlist label looked up once a day (Shortlist writes at most nightly)
@@ -70,3 +73,15 @@ LABEL_PLAIN = "shortlist"
 LABEL_PREFIX = "shortlist_"
 
 PLEX_SCHEME = "plex://"
+
+# the watch list: Plex's own Watchlist (kept by plex.tv, apart from the libraries) copied into a "To watch" collection
+# in each library that holds one of its titles, shown on the owner's Home only. The label marks the collections as
+# Plex Picks' own, and the owner's friends can be kept from seeing them with a label!= share filter on it.
+DISCOVER_URL = "https://discover.provider.plex.tv"
+WATCHLIST_TITLE = "To watch"
+LABEL_WATCHLIST = "plexpicks_watchlist"
+WATCHLIST_MINUTES = 15                 # how often the Watchlist is read (and the rows brought in line)
+WATCHLIST_PLACE_HOURS = 24             # how long a title's place on the server is remembered before it is looked up again
+WATCHLIST_SCAN_HOURS = 24              # how often every library is searched for the To watch collections
+WATCHLIST_LOOKUP_GAP_SECONDS = 1.0     # extra pause between title look-ups, on top of PLEX_GAP_SECONDS
+WATCHLIST_BUDGET_SECONDS = 600         # the longest one bringing-in-line may take (the first one looks every title up)

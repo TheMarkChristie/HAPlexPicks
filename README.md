@@ -61,6 +61,24 @@ Where the rows come from: Shortlist reads each person's Plex watch history night
 collections (Because you watched, Picked for You, Watch it again...). Plex Picks shows those rows; it does not invent
 its own. Until Shortlist has run, the card shows only Continue Watching and New on the server.
 
+## To watch on Plex Home
+
+Plex keeps your Watchlist on plex.tv, apart from your libraries, so its titles never appear as a row on the Home
+screen. Turn on **Keep a To watch row on my Plex Home** (Configure) and Plex Picks copies the Watchlist into a plain
+collection called **To watch** in each library that holds its titles, set to show on your own Home only (not in the
+library's Recommended, not on friends' Home). Every 15 minutes it brings them in line: titles newly on the Watchlist go
+in at the front, titles taken off it or watched go out (a film once played, a show once every episode is), and a
+library left with nothing loses its collection. The collections carry the label `plexpicks_watchlist`; a new one is
+placed straight after Shortlist's rows in that library's shelf list.
+
+A title held in several libraries (Movies and 4K Movies) goes in one only: the first of **Libraries to put To watch
+titles in** that has it (for example `Movies, TV Shows`), else the first in the server's own order. Turn the option on
+in one Home Assistant per Plex server. The collections can be seen in friends' Collections tab unless a `label!=`
+share filter on that label hides them.
+
+The card's detail sheet has an **Add to watch list** button (Remove once the title is on it): it changes the Plex
+Watchlist itself, the one every Plex app shows, whether or not the To watch rows are on.
+
 ## Why this pick
 
 Plex holds Shortlist's rows but not its reasons. Give the integration Shortlist's address and owner API token
@@ -87,7 +105,8 @@ detail sheet. Without the token the card still works; the rows are just unexplai
 
 The Plex token stays on the Home Assistant server. Posters and backdrops are fetched server-side and handed to the
 browser through signed, expiring URLs. The card reads its data over the Home Assistant websocket as the signed-in
-user. Nothing is written to Plex.
+user. Plex is written to only for the To watch rows (when that option is on) and the Watchlist (when the card's button
+is pressed).
 
 ## Development
 

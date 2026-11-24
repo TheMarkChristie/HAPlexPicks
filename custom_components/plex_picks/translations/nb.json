@@ -43,13 +43,17 @@
           "row_size": "Flest titler lest per rad",
           "interval_minutes": "Les Plex hver",
           "shortlist_url": "Shortlist-URL",
-          "shortlist_token": "Shortlist API-token"
+          "shortlist_token": "Shortlist API-token",
+          "watchlist_rows": "Hold en Å se-rad på Plex-hjemmesiden min",
+          "watchlist_libraries": "Bibliotek for Å se-titler, foretrukket først"
         },
         "data_description": {
           "players": "La stå tomt for å tilby husets Google Cast-enheter; kortet spør hvilken hver gang. Plex-klienter, Samsung- eller Android-TV-er kan føres opp i stedet.",
           "plex_player_for": "Én linje per TV når Plex-klienten som dukker opp for den skal navngis: media_player.tv = media_player.plex_tv",
           "shortlist_url": "Valgfritt, for sensoren for siste kjøring: adressen til Shortlists nettgrensesnitt, for eksempel http://<repository-id>-shortlist:5959 (vertsnavnet på tilleggets Info-side)",
-          "shortlist_token": "Valgfritt: Shortlists eier-API-token fra innstillingene"
+          "shortlist_token": "Valgfritt: Shortlists eier-API-token fra innstillingene",
+          "watchlist_rows": "Kopierer Plex-se-listen din til en Å se-samling i hvert bibliotek som har titlene, vist bare på din egen hjemmeside. Slå det på i én Home Assistant per Plex-server.",
+          "watchlist_libraries": "Biblioteksnavn skilt med komma, for en tittel som finnes i flere (Movies og 4K Movies): den havner i det første av disse som har den. Tomt: serverens egen rekkefølge."
         }
       }
     }

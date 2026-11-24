@@ -11,7 +11,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from .const import LABEL_PLAIN, LABEL_PREFIX
+from .const import LABEL_PLAIN, LABEL_PREFIX, PLEX_SCHEME
 
 KIND_CONTINUE = "continue"
 KIND_BECAUSE = "because"
@@ -68,6 +68,7 @@ class Item:
     library: str | None = None
     colors: dict[str, str] | None = None   # Plex's UltraBlurColors, when the server sends them
     play_key: str | None = None            # what to hand to play_media (the episode for Continue Watching, else the item)
+    watch_guid: str | None = None          # what goes on the Plex Watchlist: the film's or show's plex:// guid (None: not on plex.tv)
     # why Shortlist picked it, from its own picks ledger (only when Shortlist's URL and API token are configured)
     reason: str | None = None              # Shortlist's sentence, e.g. "Because you watched Scream 7"
     seed: str | None = None                # the watched title that produced it, when Shortlist knows it
@@ -233,6 +234,9 @@ def item_from_metadata(md: dict[str, Any], library: str | None = None) -> Item:
         colors = None
 
     year = _int(md.get("year")) or _int(md.get("parentYear")) or _int(md.get("grandparentYear"))
+    # the Watchlist holds films and shows, so an episode or a season stands for its show
+    guid = md.get("grandparentGuid") if kind == "episode" else md.get("parentGuid") if kind == "season" else md.get("guid")
+    watch_guid = guid if isinstance(guid, str) and guid.startswith(PLEX_SCHEME) else None
     return Item(
         rating_key=rating_key,
         title=str(title),
@@ -260,6 +264,7 @@ def item_from_metadata(md: dict[str, Any], library: str | None = None) -> Item:
         library=library or md.get("librarySectionTitle"),
         colors=colors,
         play_key=rating_key,
+        watch_guid=watch_guid,
     )
 
 
@@ -332,13 +337,15 @@ def people_from_rows(rows: list[Row]) -> list[str]:
     return seen
 
 
-def payload(server: dict[str, Any], rows: list[Row], generated_at: int) -> dict[str, Any]:
-    """The whole thing as plain dicts: what the websocket sends and the sensors summarise."""
+def payload(server: dict[str, Any], rows: list[Row], generated_at: int, watchlist: list[str] | None = None) -> dict[str, Any]:
+    """The whole thing as plain dicts: what the websocket sends and the sensors summarise. `watchlist` is the plex://
+    guids on the owner's Plex Watchlist, so the card can show whether a title is on it."""
     return {
         "server": server,
         "generated_at": generated_at,
         "people": people_from_rows(rows),
         "rows": [asdict(row) for row in rows],
+        "watchlist": list(watchlist or []),
     }
 
 
